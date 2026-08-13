@@ -73,6 +73,8 @@ def _build_parser() -> argparse.ArgumentParser:
                    help="индексы камер из config (например 0 1 2)")
     p.add_argument("--once", action="store_true", help="отработать ~30 кадров и выйти")
     p.add_argument("--self-test", action="store_true", help="отправить тестовое уведомление")
+    p.add_argument("--register", action="store_true", help="подготовить лица из data/datasets/raw/"
+                    " (создать папки, вырезать, запомнить) и выйти")
     p.add_argument("--preview", action="store_true", help="живое окно с рамками (вкл. ui.preview_enabled)")
     p.add_argument("--recording", action="store_true", help="запись клипов событий (вкл. recording.enabled)")
     return p
@@ -94,6 +96,13 @@ def main() -> int:
 
     if args.self_test:
         notifier.self_test()
+        db.close()
+        return 0
+
+    if args.register:
+        from src.face_setup import register_all
+        people = register_all(cfg)
+        print(f"\nПодготовлено людей: {people}. Можно запускать камеру: python main.py")
         db.close()
         return 0
 

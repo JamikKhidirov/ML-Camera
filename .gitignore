@@ -9,6 +9,7 @@ venv/
 # Само содержимое (фото, видео, БД, модели, логи, подписи людей) — нет.
 data/*
 !data/.gitkeep
+!data/README.txt
 !data/**/
 !data/**/.gitkeep
 data/**/*.jpg
@@ -35,6 +36,11 @@ data/test_video.mp4
 .DS_Store
 Thumbs.db
 
-# Локальные секреты
+# Локальные секреты и временные артефакты
 .env
 *.local.yaml
+pc/deploy.yaml
+dist/
+build/
+*.spec
+pc/dist/

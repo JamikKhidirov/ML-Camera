@@ -1,0 +1,4 @@
+# Пакеты только для СБОРКИ .exe и деплоя на сервер.
+# Установка:  pip install -r requirements-build.txt
+pyinstaller>=6.0
+paramiko>=3.0

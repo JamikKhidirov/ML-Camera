@@ -26,7 +26,7 @@ sys.path.insert(0, str(ROOT))
 
 # по умолчанию ПК-версия, если не указан другой конфиг
 if "--config" not in sys.argv and "--self-test" not in sys.argv:
-    sys.argv += ["--config", "config/config.pc.yaml"]
+    sys.argv += ["--config", str(Path(__file__).resolve().parent / "config/config.pc.yaml")]
 
 from src.main import main  # noqa: E402
 

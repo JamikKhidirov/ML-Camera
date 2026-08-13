@@ -18,7 +18,10 @@ ROOT = Path(__file__).resolve().parent.parent
 INCLUDE = [
     "src", "scripts", "tests", "config", "docs",
     "Dockerfile", "docker-compose.yml",
-    "requirements.txt", "README.md", "main.py",
+    "requirements.txt", "requirements-pc.txt", "requirements-build.txt",
+    "README.md", "main.py",
+    # лица и база фотографий уедут на сервер вместе с проектом (если есть)
+    "data/datasets", "data/db",
 ]
 
 

@@ -2,16 +2,13 @@
 # =====================================================================
 #  deploy_server.sh — разворот MLCamera на сервере ОДНОЙ командой.
 #
-#  У себя на компьютере:
-#    1) python scripts/make_release_zip.py
-#    2) scp dist/ml_camera_*.zip root@IP_СЕРВЕРА:/root/
-#    3) ssh root@IP_СЕРВЕРА 'bash -s' < scripts/deploy_server.sh
-#    4) отредактируй /root/ml_camera/config/config.yaml
-#       (IP камер, telegram, ntfy)  ->  nano config/config.yaml
-#    5) docker compose -f docker-compose.prod.yml up -d --build
-#       (или просто перезапустите службу, см. ниже)
+#  У себя на компьютере (ВСЁ ДЕЛАЕТСЯ АВТОМАТИЧЕСКИ):
+#    python pc/deploy_vps.py
+#  (этот скрипт запускается на сервере той же командой)
 #
-#  Скрипт сам: ставит Docker, распаковывает, настраивает сервис systemd.
+#  Скрипт сам: ставит Docker, распаковывает проект (вместе с твоим
+#  конфигом и базой лиц), собирает и запускает контейнер.
+#  После — только проверка: docker ps / docker logs -f ml_camera
 # =====================================================================
 set -euo pipefail
 
@@ -54,6 +51,7 @@ docker compose -f docker-compose.prod.yml up -d --build
 
 echo "==> 5/5 Готово!"
 echo "Проверка:  docker ps  /  docker logs -f ml_camera"
-echo "Файлы конфига: $APP_DIR/config/config.yaml"
+echo "Конфиг пришёл вместе с проектом (твой config/config.yaml)"
+echo "Если надо поменять: $APP_DIR/config/config.yaml  ->  docker compose -f docker-compose.prod.yml up -d --build"
 echo "События:      $APP_DIR/data/events"
 echo "База:         $APP_DIR/data/db/ml_camera.db"

@@ -173,7 +173,7 @@ def main() -> int:
     rec.close()
     clips = list((ROOT / "data/videos/selfcheck").glob("*.mp4"))
     ok(f"клип создан: {clips[0].name}" if clips else "клип НЕ создан")
-    for f in (ROOT / "data/videos/selfcheck").glob("*"):
+    for f in (ROOT / "data/videos/selfcheck").glob("*.mp4"):
         f.unlink()
 
     # ---------- 9. YOLO (люди и машины) ----------

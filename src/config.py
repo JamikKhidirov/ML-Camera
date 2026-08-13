@@ -4,12 +4,19 @@ from __future__ import annotations
 import copy
 import logging
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# В .exe (PyInstaller onedir) весь проект лежит в папке рядом с MLCamera.exe:
+# там должны быть config/ и data/. В исходниках — корень репозитория.
+if getattr(sys, "frozen", False):
+    PROJECT_ROOT = Path(sys.executable).resolve().parent
+else:
+    PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
 CONFIG_PATH = PROJECT_ROOT / "config" / "config.yaml"
 
 
