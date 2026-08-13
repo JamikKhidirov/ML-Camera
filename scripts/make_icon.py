@@ -1,10 +1,15 @@
 """Генератор иконки MLCamera (pc/MLCamera.ico).
 
-Рисует простую «камеру» с красной точкой REC. Нужен Pillow (уже в requirements).
+Рисует простую «камеру» с синим объективом. Пишет НАСТОЯЩИЙ многоразмерный
+ICO (PNG-изображения внутри, поддерживается Windows Vista+) — Pillow сам
+многоразмерный ICO сохранять не умеет.
+
 Запуск:  python scripts/make_icon.py
 """
 from __future__ import annotations
 
+import io
+import struct
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -21,35 +26,48 @@ def _draw(size: int) -> Image.Image:
     d = ImageDraw.Draw(img)
 
     # корпус камеры (тёмный скруглённый прямоугольник)
-    body = (0.06 * s, 0.20 * s, 0.94 * s, 0.74 * s)
-    d.rounded_rectangle(body, radius=0.10 * s, fill=(28, 32, 40, 255))
-
+    d.rounded_rectangle((0.06 * s, 0.20 * s, 0.94 * s, 0.74 * s),
+                        radius=0.10 * s, fill=(28, 32, 40, 255))
     # «объектив»
-    cx, cy = 0.46 * s, 0.47 * s
     d.ellipse((0.12 * s, 0.24 * s, 0.80 * s, 0.70 * s), fill=(9, 13, 20, 255))
-    d.ellipse((cx - 0.20 * s, cy - 0.21 * s, cx + 0.20 * s, cy + 0.21 * s),
-              fill=(38, 140, 255, 255))
-    d.ellipse((cx - 0.08 * s, cy - 0.09 * s, cx + 0.08 * s, cy + 0.09 * s),
-              fill=(180, 230, 255, 255))
-
+    d.ellipse((0.20 * s, 0.26 * s, 0.72 * s, 0.68 * s), fill=(38, 140, 255, 255))
+    d.ellipse((0.32 * s, 0.38 * s, 0.48 * s, 0.54 * s), fill=(190, 235, 255, 255))
     # индикатор записи (красная точка)
-    d.ellipse((0.80 * s, 0.30 * s, 0.92 * s, 0.42 * s), fill=(255, 60, 60, 255))
-
-    # «вспышка» справа сверху
-    d.polygon([(0.78 * s, 0.16 * s), (0.92 * s, 0.10 * s), (0.94 * s, 0.18 * s)],
-              fill=(255, 210, 120, 255))
+    d.ellipse((0.80 * s, 0.28 * s, 0.93 * s, 0.41 * s), fill=(255, 60, 60, 255))
+    # «вспышка»
+    d.polygon([(0.78 * s, 0.10 * s), (0.94 * s, 0.06 * s), (0.95 * s, 0.16 * s)],
+              fill=(255, 200, 90, 255))
     return img
+
+
+def _png_bytes(img: Image.Image) -> bytes:
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _build_ico(images: list[tuple[int, bytes]]) -> bytes:
+    """Собирает ICO-файл вручную из PNG-картинок (формат PNG-in-ICO)."""
+    count = len(images)
+    header = struct.pack("<HHH", 0, 1, count)
+    entries = b""
+    offset = 6 + 16 * count
+    data = b""
+    for size, png in images:
+        entries += struct.pack("<BBBBHHII", size & 0xFF, size & 0xFF, 0, 0, 1, 32,
+                               len(png), offset)
+        data += png
+        offset += len(png)
+    return header + entries + data
 
 
 def main() -> int:
     sizes = [16, 24, 32, 48, 64, 128, 256]
+    pngs = [(sz, _png_bytes(_draw(sz))) for sz in sizes]
     out = ROOT / "pc" / "MLCamera.ico"
     out.parent.mkdir(exist_ok=True)
-    frames = [_draw(sz) for sz in sizes]
-    # ico может хранить каждый размер отдельной «страницей»
-    frames[0].save(out, format="ICO", sizes=[(sz, sz) for sz in sizes],
-                   append_images=frames[1:])
-    print(f"Иконка готова: {out}")
+    out.write_bytes(_build_ico(pngs))
+    print(f"Иконка готова: {out} ({out.stat().st_size} байт, {len(pngs)} размеров)")
     return 0
 
 
