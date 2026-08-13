@@ -22,6 +22,10 @@ data/**/*.avi
 data/**/*.mkv
 data/**/*.db
 data/**/*.sqlite*
+data/**/*.db-wal
+data/**/*.db-shm
+data/**/*.db-journal
+data/**/*.json
 data/**/*.onnx
 data/**/*.pt
 data/**/*.pth
