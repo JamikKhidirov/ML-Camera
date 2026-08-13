@@ -1,0 +1,141 @@
+# =====================================================================
+#  ГОТОВЫЙ ПРИМЕР конфига VPS (config/config.vps.yaml)
+#  Здесь НАПРИМЕРЫ заполнено. Замени <...> на свои значения.
+#  Строки с # --> замени на свои.
+# =====================================================================
+
+people:
+  # --> впиши НАСТОЯЩИЕ имена. Это же имена папок в data/datasets/raw/<имя>/
+  names:
+    Алексей: "Алексей"
+    Ольга: "Ольга"
+    Сергей: "Сергей"
+    Аня: "Аня"
+    Катя: "Катя"
+    # если добавил человека через scripts/add_person.py Имя — допиши сюда:
+    # Бабушка: "Мария"
+  unknown_label: "Незнакомец"
+
+cameras:
+  # --> замени на свои: rtsp://ЛОГИН:ПАРОЛЬ@IP_КАМЕРЫ:554/stream1
+  # ЛОГИН и ПАРОЛЬ — от самой камеры (админка камеры), НЕ от сервера!
+  # IP_КАМЕРЫ — адрес камеры в твоей домашней сети, напр. 192.168.1.100
+  # (найди в приложении камеры Mi Home / Hik-Connect и т.п.)
+  - name: "Камера-1 (двор)"
+    source: "rtsp://admin:password@192.168.1.100:554/stream1"
+    enabled: true
+  - name: "Камера-2 (ворота)"
+    source: "rtsp://admin:password@192.168.1.101:554/stream1"
+    enabled: false      # --> поставь true, когда включишь вторую камеру
+  - name: "Камера-3 (задний двор)"
+    source: "rtsp://admin:password@192.168.1.102:554/stream1"
+    enabled: false
+
+camera:
+  width: 1280
+  height: 720
+  night_enabled: true
+  night_brightness_threshold: 60
+  frame_averaging_night: true
+  frame_averaging_count: 3
+
+analysis:
+  detect_every_n_frames: 8
+  frame_scale: 0.5
+  multi_resolution: true
+  small_frame_scale: 0.4
+  debug_delay: 0.0
+
+motion:
+  enabled: true
+  threshold: 1500
+  scale: 0.25
+  force_interval_frames: 300
+
+tracking:
+  enabled: true
+  min_frames_to_notify: 3
+  max_disappeared: 20
+  max_distance: 90
+  entry_line_y: 0.5
+
+face:
+  enabled: true
+  providers: ["CPUExecutionProvider"]
+  model_name: "buffalo_s"
+  detection_size: [640, 640]
+  similarity_threshold: 0.45
+  min_det_score: 0.4
+  cooldown_minutes: 30
+  notify_unknown: true
+  save_unknown: true
+  auto_capture_unknown: true
+  auto_capture_dir: "data/datasets/auto_unknown"
+
+car:
+  enabled: true
+  detect_classes: ["car", "truck", "bus", "motorbike"]
+  conf_threshold: 0.35
+  color_enabled: true
+  brand_enabled: false
+  plate_enabled: true
+  plate_engine: "tesseract"
+  plate_vote_frames: 5
+  # --> свои номера (формат: A123BC 777). Они будут «Своя машина».
+  known_plates:
+    # - "A123BC 777"
+  cooldown_minutes: 60
+
+models:
+  yolov8: "data/models/yolov8n.pt"
+  brand_onnx: "data/models/car_brand.onnx"
+  brand_labels: "data/models/car_brand_labels.json"
+
+database:
+  path: "data/db/ml_camera.db"
+
+storage:
+  events_dir: "data/events"
+
+recording:
+  enabled: false                  # на VPS видео НЕ пишем (без нагрузки)
+  mode: "events"
+  output_dir: "data/videos"
+  seconds_before: 3
+  seconds_after: 3
+  rotate_seconds: 300
+  fps: 12
+  fourcc: "mp4v"
+
+ui:
+  preview_enabled: false
+  window_title: "MLCamera — {cam}"
+
+notify:
+  min_interval_seconds: 30
+  telegram:
+    enabled: true
+    # --> токен от @BotFather (см. инструкцию ниже)
+    bot_token: "123456789:AAFkq9x_пример_скопируй_свой"
+    # --> КОМУ слать: список chat_id (каждый — отдельный аккаунт Telegram)
+    #     свой id узнай у @userinfobot; id родственников — так же
+    chat_ids:
+      - "111111111"
+      - "222222222"
+  # --> удаляет фото после успешной отправки (на VPS экономит диск)
+  delete_images_after_send: true
+  push:
+    enabled: true
+    provider: "ntfy"
+    server: "https://ntfy.sh"
+    # --> придумай СВОЙ секретный topic и подпишись на него в приложении ntfy
+    topic: "my_camera_unique_secret_topic"
+
+digest:
+  enabled: true
+  time: "09:00"
+  hours: 24
+
+logging:
+  level: "INFO"
+  file: "data/logs/camera.log"

@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Данные (датасеты, БД, события, логи) — не коммитим
+data/datasets/**
+data/events/**
+data/db/**
+data/logs/**
+data/models/*.onnx
+data/models/*.pt
+data/models/*.pth
+data/snapshots/**
+data/test_video.mp4
+
+# IDE / ОС
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Локальные секреты
+.env
+*.local.yaml

@@ -1,0 +1,103 @@
+name: CI/CD
+
+# События: коммит в main или кнопка "Run workflow"
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  # ---------- 1. Автотесты ----------
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run tests
+        run: python -m pytest tests -q
+
+  # ---------- 2. Собрать Docker-образ и залить в GHCR ----------
+  build-and-push:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build & push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ github.repository }}:${{ github.sha }}
+
+  # ---------- 3. Автодеплой на VPS ----------
+  deploy:
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare upload files
+        run: |
+          mkdir -p upload
+          # конфиг кладётся из секрета CONFIG_YAML (твой config.yaml целиком)
+          echo "${{ secrets.CONFIG_YAML }}" > upload/config.yaml
+          # прод-версия compose: без build, образ из GHCR
+          cat > upload/docker-compose.prod.yml <<'YML'
+services:
+  camera:
+    image: ghcr.io/${{ github.repository }}:latest
+    container_name: ml_camera
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+      - ./config.yaml:/app/config/config.yaml:ro
+    environment:
+      - TZ=Europe/Moscow
+      - OMP_NUM_THREADS=2
+YML
+
+      - name: Install ssh client
+        run: sudo apt-get update && sudo apt-get install -y sshpass
+
+      - name: Bootstrap and deploy to VPS
+        env:
+          HOST: ${{ secrets.SERVER_IP }}
+          USER: ${{ secrets.SERVER_USER }}
+          PASSWORD: ${{ secrets.SERVER_PASSWORD }}
+        run: |
+          set -e
+          # 1) если нужно — ставим Docker и создаём структуру
+          sshpass -p "$PASSWORD" ssh -o StrictHostKeyChecking=no "$USER@$HOST" 'bash -s' <<'EOF'
+            set -e
+            if ! command -v docker >/dev/null 2>&1; then
+              echo "--> Installing Docker..."
+              curl -fsSL https://get.docker.com | sh
+            fi
+            mkdir -p ~/ml_camera/data/{db,models,datasets,events,logs}
+            echo "--> Base ready"
+          EOF
+          # 2) копируем конфиг и compose
+          sshpass -p "$PASSWORD" scp -o StrictHostKeyChecking=no \
+            upload/config.yaml upload/docker-compose.prod.yml "$USER@$HOST:~/ml_camera/"
+          # 3) перезапускаем контейнер
+          sshpass -p "$PASSWORD" ssh -o StrictHostKeyChecking=no "$USER@$HOST" \
+            "cd ~/ml_camera && docker compose -f docker-compose.prod.yml up -d --pull always"
+          echo "Deployed to $HOST"
+
+# Как включить? — см. docs/DEPLOYMENT.md (нужно 4 секрета в репозитории GitHub).

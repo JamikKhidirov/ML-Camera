@@ -1,0 +1,21 @@
+# ===== Ядро (обязательно) =====
+numpy>=1.24
+opencv-python>=4.8
+PyYAML>=6.0
+requests>=2.31
+Pillow>=10.0
+insightface>=0.7.3
+onnxruntime>=1.16
+ultralytics>=8.1
+
+# ===== Распознавание номеров вариант 1 (лёгкий, нужен tesseract в системе) =====
+pytesseract>=0.3.10
+
+# ===== Распознавание номеров вариант 2 (тяжёлый, качает torch ~2ГБ) =====
+# раскомментируй если решишь использовать plate_engine: easyocr
+# easyocr>=1.7
+
+# ===== Разработка / тесты =====
+pytest>=7.0
+
+# Обновить pip:  python -m pip install --upgrade pip

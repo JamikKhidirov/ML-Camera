@@ -1,0 +1,14 @@
+# Дополнительные пакеты для МОЩНОЙ ПК-версии (config/config.pc.yaml)
+# Установка:  pip install -r requirements-pc.txt
+
+# Точное распознавание номеров (torch уже стоит вместе с ultralytics)
+easyocr>=1.7
+
+# Видеокарта AMD (RX 5700 XT) для ускорения распознавания лиц через DirectML.
+# ВАЖНО: ставить последним (заменяет onnxruntime на DirectML-версию).
+# Если ставится криво — просто удали строку ниже, всё будет работать на CPU.
+# onnxruntime-directml
+
+# Видеокарта NVIDIA (CUDA) — раскомментируй для GeForce RTX:
+# (тогда поставь onnxruntime-gpu вместо onnxruntime-directml, НЕ вместе)
+# onnxruntime-gpu

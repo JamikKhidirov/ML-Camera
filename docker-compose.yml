@@ -1,0 +1,28 @@
+# MLCamera — разворот на сервере через Docker Compose.
+#
+# Пошаговая инструкция: docs/DEPLOYMENT.md
+# Короткая версия:
+#   1) на сервере поставь Docker:   curl -fsSL https://get.docker.com | sh
+#   2) скопируй папку на сервер
+#   3) отредактируй config/config.yaml (источники камер, telegram/ntfy)
+#   4) docker compose up -d --build
+#
+# Данные (БД, события, датасеты, модели) живут в ./data и не теряются при перезапуске.
+services:
+  camera:
+    build: .
+    container_name: ml_camera
+    restart: unless-stopped
+    # Полезно знать матрицу: на слабых VPS запусти с --once тест
+    command: ["python", "-m", "src.main"]
+    volumes:
+      - ./data:/app/data
+      - ./config/config.yaml:/app/config/config.yaml:ro
+    environment:
+      - TZ=Europe/Moscow
+      - OMP_NUM_THREADS=2
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

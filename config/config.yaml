@@ -1,0 +1,190 @@
+# =====================================================================
+#  MLCamera — УНИВЕРСАЛЬНЫЙ конфиг (по умолчанию).
+#
+#  Есть две готовые версии:
+#    config/config.pc.yaml  — мощный ПК (Ryzen + видеокарта AMD/Intel, превью,
+#                             запись клипов, детекция движения, большие модели)
+#    config/config.vps.yaml — лёгкий сервер (VPS 300 ₽, tesseract, малые модели)
+#
+#  Запуск нужной версии:  python -m src.main --config config/config.pc.yaml
+#  Что куда закидывать (фотки семьи): см. docs/DATASET.md
+# =====================================================================
+
+people:
+  # Реальные имена = ИМЕНА ПАПОК в data/datasets/raw/. Именно они в уведомлениях.
+  names:
+    Алексей: "Алексей"     # ты
+    Ольга: "Ольга"         # мама
+    Сергей: "Сергей"       # папа
+    Аня: "Аня"             # старшая сестра
+    Катя: "Катя"           # младшая сестра
+    # Бабушка: "Мария"     # добавь после python scripts/add_person.py Бабушка
+  unknown_label: "Незнакомец"
+  # Новый человек: python scripts/add_person.py Имя  -> создаст папку;
+  # положи фото, добавь строку выше, запусти collect_faces.py + register_faces.py
+
+cameras:
+  # RTSP: rtsp://ЛОГИН:ПАРОЛЬ@IP_КАМЕРЫ:554/stream1
+  # Тест без камеры: source: "data/test_video.mp4"  (положи файл) или 0 (вебка)
+  - name: "Камера-1 (двор)"
+    source: "rtsp://admin:password@192.168.1.100:554/stream1"
+    enabled: true
+  - name: "Камера-2 (ворота)"
+    source: "rtsp://admin:password@192.168.1.101:554/stream1"
+    enabled: false
+  - name: "Камера-3 (задний двор)"
+    source: "rtsp://admin:password@192.168.1.102:554/stream1"
+    enabled: false
+
+camera:
+  width: 1280
+  height: 720
+  night_enabled: true
+  night_brightness_threshold: 60
+  # Усреднение НОЧНЫХ кадров: берём N кадров подряд и усредняем — меньше шума,
+  # номер и лицо читаются даже в темноте (включается только при плохом свете)
+  frame_averaging_night: true
+  frame_averaging_count: 3
+
+analysis:
+  # Анализируем каждый N-й кадр. На ПК можно 1-2, на VPS 5-10
+  detect_every_n_frames: 3
+  # Уменьшение кадра перед анализом (1.0 = без уменьшения, 0.5 = вдвое быстрее)
+  frame_scale: 0.75
+  # МУЛЬТИРАЗРЕШЕНИЕ: есть движение — анализ полным кадром;
+  # нет движения — периодический «прочёс» мелким кадром (экономия CPU)
+  multi_resolution: true
+  small_frame_scale: 0.5
+  debug_delay: 0.0
+
+motion:
+  # Детекция движения: анализ включается только когда что-то шевелится.
+  # На ПК с камерой — включай (экономит CPU), на VPS тоже полезно.
+  enabled: true
+  # Сколько изменённых пикселей нужно, чтобы сработать (100-3000)
+  threshold: 1500
+  # Уменьшение кадра для сравнения (чем меньше, тем быстрее)
+  scale: 0.25
+  # Раз в столько кадров анализ запускается ВСЁ РАВНО (страховка от пропуска)
+  force_interval_frames: 300
+
+tracking:
+  # Трекинг объектов между кадрами:
+  #   лицо/машина стоят 2 минуты = ОДНО уведомление за проход (без спама);
+  #   номер машины собирается с нескольких кадров «голосованием»;
+  #   пересечение линии в кадре -> «Алексей вошёл / вышел»
+  enabled: true
+  # Сколько кадров подряд видим объект, чтобы считать его «появлением»
+  min_frames_to_notify: 3
+  # Сколько кадров держим трек после пропадания объекта
+  max_disappeared: 20
+  # Макс. смещение центра между кадрами, чтобы считаться одним объектом
+  max_distance: 90
+  # Горизонтальная линия «входа» (0.0 верх кадра ... 1.0 низ).
+  # Если центр объекта пересекает линию вниз -> «вошёл», вверх -> «вышел».
+  # Установи значение под твою камеру (где проходит граница входа).
+  entry_line_y: 0.5
+  # Для машин свои параметры трекинга (машины двигаются быстрее)
+  car_max_disappeared: 6
+  car_max_distance: 120
+
+face:
+  enabled: true
+  # Провайдеры исполнения InsightFace по порядку:
+  #   ПК с AMD видеокартой: ["DmlExecutionProvider", "CPUExecutionProvider"]
+  #   ПК с NVIDIA (CUDA):   ["CUDAExecutionProvider", "CPUExecutionProvider"]
+  #   Сервер/VPS:           ["CPUExecutionProvider"]
+  providers: ["DmlExecutionProvider", "CUDAExecutionProvider", "CPUExecutionProvider"]
+  # Модель: buffalo_s (легче, быстрее) / buffalo_l (точнее, на ПК можно)
+  model_name: "buffalo_s"
+  detection_size: [640, 640]
+  similarity_threshold: 0.45
+  min_det_score: 0.4
+  cooldown_minutes: 30
+  notify_unknown: true
+  save_unknown: true
+  # Авто-обучение: лица незнакомцев складываются в data/datasets/auto_unknown/.
+  # Потом посмотри фото, переложи в data/datasets/raw/<имя>/ и запусти
+  # collect_faces.py + register_faces.py — камера "выучит" нового человека.
+  auto_capture_unknown: true
+  auto_capture_dir: "data/datasets/auto_unknown"
+
+car:
+  enabled: true
+  detect_classes: ["car", "truck", "bus", "motorbike"]
+  conf_threshold: 0.35
+  color_enabled: true
+  brand_enabled: false      # требует обученной модели марок — см. scripts/train_brand_classifier.py
+  plate_enabled: true
+  # VPS: tesseract (лёгкий) | ПК: easyocr (точнее) — нужен pip install easyocr
+  plate_engine: "tesseract"
+  # Сколько кадров «голосуют» за номер (трекинг собирает OCR с каждого кадра,
+  # берётся самый частый результат) — размытый номер читается точнее
+  plate_vote_frames: 5
+  # Белый список своих номеров (формат как в уведомлении: A123BC 777):
+  # такие машины будут подписаны «Своя машина», остальные — «Чужая машина ...»
+  known_plates:
+    # - "A123BC 777"
+  cooldown_minutes: 60
+
+models:
+  # На ПК можно yolov8m / yolov8l (точнее, но медленнее). Сервер: yolov8n
+  yolov8: "data/models/yolov8n.pt"
+  brand_onnx: "data/models/car_brand.onnx"
+  brand_labels: "data/models/car_brand_labels.json"
+
+database:
+  path: "data/db/ml_camera.db"
+
+storage:
+  events_dir: "data/events"
+
+recording:
+  # Запись видео с камеры в ОТДЕЛЬНУЮ ПАПКУ data/videos/<камера>/
+  enabled: false
+  # events      — короткие клипы вокруг события (лицо/машина/незнакомец)
+  # continuous  — непрерывная запись потока (файл каждые rotate_seconds сек)
+  mode: "events"
+  output_dir: "data/videos"
+  seconds_before: 3
+  seconds_after: 3
+  rotate_seconds: 300
+  fps: 12
+  fourcc: "mp4v"
+
+ui:
+  # Живое окно предпросмотра с рамками (только когда на ПК есть дисплей)
+  preview_enabled: false
+  window_title: "MLCamera — {cam}"
+
+notify:
+  min_interval_seconds: 30
+  telegram:
+    enabled: true
+    # Создай бота через @BotFather, получи токен
+    bot_token: "PASTE_TELEGRAM_BOT_TOKEN"
+    # Токен можно отдавать через переменную окружения: bot_token: "${BOT_TOKEN}"
+    # Кому слать НАСТОЯЩЕЕ значения (несколько аккаунтов):
+    chat_ids:
+      - "111111111"       # --> твой chat_id (узнай через @userinfobot)
+      - "222222222"       # --> chat_id сестры/родителей (кому ещё присылать)
+    # Либо старый вариант для одного получателя:
+    # chat_id: "111111111"
+  # Удалять фото с сервера после успешной отправки? (на VPS места мало — ставь true)
+  delete_images_after_send: false
+  push:
+    enabled: true
+    provider: "ntfy"
+    server: "https://ntfy.sh"
+    topic: "my_camera_unique_secret_topic"
+
+digest:
+  # Ежедневный дайджест: утром шлёт в Telegram/ntfy сводку за сутки
+  # («кто приходил, какие машины, незнакомцы»)
+  enabled: true
+  time: "09:00"        # время отправки (по времени сервера)
+  hours: 24            # за сколько часов собирать сводку
+
+logging:
+  level: "INFO"
+  file: "data/logs/camera.log"
