@@ -37,6 +37,91 @@
 
 ---
 
+## 🗺 Схема проекта: где что лежит и куда нажимать
+
+Всё по-простому: что хочешь сделать → **какой файл/папка** → **ссылка**.
+
+### ⚙️ НАСТРОЙКИ (что заполнять перед запуском)
+| Что вписать | Файл | Ссылка |
+|---|---|---|
+| Токен Telegram-бота, id аккаунтов (кому писать) | `config/config.pc.yaml` | [открыть](config/config.pc.yaml) |
+| Логин/пароль/IP камер | `config/config.pc.yaml` → `cameras:` | [открыть](config/config.pc.yaml) |
+| Пуши на телефон (ntfy topic) | `config/config.pc.yaml` → `notify.push:` | [открыть](config/config.pc.yaml) |
+| Свои машины (номера) | `config/config.pc.yaml` → `car.known_plates` | [открыть](config/config.pc.yaml) |
+| Имена людей | `config/config.pc.yaml` → `people.names` | [открыть](config/config.pc.yaml) |
+| ПК-версия / серверная | `config/config.pc.yaml` / `config/config.vps.yaml` | [pc](config/config.pc.yaml) · [vps](config/config.vps.yaml) |
+
+### 📷 ФОТОГРАФИИ ЛЮДЕЙ (куда класть)
+| Что сделать | Папка | Ссылка |
+|---|---|---|
+| Кинуть 10–25 фото родных (папка = имя) | `data/datasets/raw/ИМЯ/` | [открыть папку](data/datasets/raw) |
+| Фото незнакомцев для авто-обучения | `data/datasets/auto_unknown/` | [открыть папку](data/datasets/auto_unknown) |
+| Запомнить лица после добавления фото | команда `python main.py --register` | [main.py](main.py) |
+
+### ▶️ ЗАПУСК (что нажать)
+| Хочу | Что | Ссылка |
+|---|---|---|
+| Запустить камеру (окно + видео + уведомления) | `python main.py` | [main.py](main.py) |
+| Запустить двойным кликом на ПК | `start_pc.bat` | [start_pc.bat](start_pc.bat) |
+| Первая настройка проекта (ставит всё само) | `pc/setup.bat` | [setup.bat](pc/setup.bat) |
+| Собрать `.exe` с иконкой | `pc/build_exe.bat` → `pc/dist/MLCamera/MLCamera.exe` | [build_exe.bat](pc/build_exe.bat) |
+| Проверить, что уведомления доходят | `python main.py --self-test` | [main.py](main.py) |
+| Прогнать тесты и самопроверку | `run_tests.bat` | [run_tests.bat](run_tests.bat) |
+
+### ☁️ СЕРВЕР VPS (чтобы работало без ПК, 24/7)
+| Хочу | Что | Ссылка |
+|---|---|---|
+| Вписать IP/пароль сервера | `pc/deploy.yaml` (копия: [deploy.example.yaml](pc/deploy.example.yaml)) | [открыть](pc/deploy.example.yaml) |
+| Автоматически развернуть проект на сервере | `python pc/deploy_vps.py` | [deploy_vps.py](pc/deploy_vps.py) |
+| Деплой через GitHub Actions (вариант Б) | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | [открыть](docs/DEPLOYMENT.md) |
+| Как соединить камеру и сервер (WireGuard и т.п.) | [docs/VPS_CAMERAS.md](docs/VPS_CAMERAS.md) | [открыть](docs/VPS_CAMERAS.md) |
+
+### 📁 ГДЕ СМОТРЕТЬ РЕЗУЛЬТАТ
+| Что | Папка | Ссылка |
+|---|---|---|
+| Фото событий (что пришло в Telegram) | `data/events/<камера>/<дата>/` | [открыть папку](data/events) |
+| Видео с камер (ПК) | `data/videos/<камера>/` | [открыть папку](data/videos) |
+| База событий | `data/db/ml_camera.db` + `python scripts/show_events.py` | [show_events.py](scripts/show_events.py) |
+| Логи (если что-то не работает) | `data/logs/camera.log` | [открыть папку](data/logs) |
+
+### 📚 ДОКУМЕНТАЦИЯ (все файлы)
+| Документ | О чём | Ссылка |
+|---|---|---|
+| ★ **НАЧАЛО.md** | главный гайд «с нуля до работающей камеры» | [открыть](docs/НАЧАЛО.md) |
+| RUNBOOK.md | все команды, скрипты, что ещё можно сделать | [открыть](docs/RUNBOOK.md) |
+| DATASET.md | как правильно фотографировать людей | [открыть](docs/DATASET.md) |
+| SETUP.md | настройка под ключ (камеры, бот, пуши) | [открыть](docs/SETUP.md) |
+| DEPLOYMENT.md | развёртывание на VPS | [открыть](docs/DEPLOYMENT.md) |
+| VPS_CAMERAS.md | камера + сервер (сети, проброс портов) | [открыть](docs/VPS_CAMERAS.md) |
+| data/README.txt | куда что класть в папке `data/` | [открыть](data/README.txt) |
+
+### 🧰 СКРИПТЫ (папка `scripts/`, вызываются `python scripts/...`)
+| Скрипт | Что делает | Ссылка |
+|---|---|---|
+| `make_dirs.py` | создать все папки проекта | [открыть](scripts/make_dirs.py) |
+| `add_person.py Имя` | добавить нового человека | [открыть](scripts/add_person.py) |
+| `collect_faces.py` | вырезать лица из фото | [открыть](scripts/collect_faces.py) |
+| `register_faces.py` | запомнить лица (эмбеддинги) | [открыть](scripts/register_faces.py) |
+| `download_models.py` | скачать/проверить модели ИИ | [открыть](scripts/download_models.py) |
+| `make_test_video.py` | сгенерировать тестовое видео без камеры | [открыть](scripts/make_test_video.py) |
+| `self_check.py` | полная самопроверка всех модулей | [открыть](scripts/self_check.py) |
+| `show_events.py` | показать последние события из базы | [открыть](scripts/show_events.py) |
+| `make_icon.py` | пересобрать иконку `pc/MLCamera.ico` | [открыть](scripts/make_icon.py) |
+| `make_release_zip.py` | упаковать проект в zip для сервера | [открыть](scripts/make_release_zip.py) |
+| `deploy_server.sh` | развернуть на сервере (запускается `pc/deploy_vps.py`) | [открыть](scripts/deploy_server.sh) |
+| `train_brand_classifier.py` | (опция) обучить распознавание марок | [открыть](scripts/train_brand_classifier.py) |
+
+### 📦 ПАПКА `pc/` (всё для запуска с компьютера)
+| Файл | Что это | Ссылка |
+|---|---|---|
+| `setup.bat` | первый запуск (ставит всё само) | [открыть](pc/setup.bat) |
+| `build_exe.bat` | собрать `.exe` с иконкой | [открыть](pc/build_exe.bat) |
+| `MLCamera.ico` | иконка программы | [открыть](pc/MLCamera.ico) |
+| `deploy_vps.py` | авто-деплой на VPS | [открыть](pc/deploy_vps.py) |
+| `deploy.example.yaml` | шаблон: IP/пароль сервера | [открыть](pc/deploy.example.yaml) |
+
+---
+
 ## 1. Что умеет
 
 | Возможность | Как работает |
