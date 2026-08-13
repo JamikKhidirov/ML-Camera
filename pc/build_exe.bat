@@ -26,7 +26,7 @@ echo [3/5] Собираю MLCamera.exe (PyInstaller, ~5-15 минут)...
     --icon pc\MLCamera.ico ^
     --distpath pc\dist --workpath build\pyi ^
     --collect-data insightface --collect-data ultralytics ^
-    main.py
+    pc\main.py
 if errorlevel 1 (
     echo [ОШИБКА] Сборка не удалась. См. выше.
     pause

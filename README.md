@@ -61,11 +61,12 @@
 ### ▶️ ЗАПУСК (что нажать)
 | Хочу | Что | Ссылка |
 |---|---|---|
-| Запустить камеру (окно + видео + уведомления) | `python main.py` | [main.py](main.py) |
-| Запустить двойным кликом на ПК | `start_pc.bat` | [start_pc.bat](start_pc.bat) |
+| Запустить камеру с окном (ПК) | `python pc/main.py` | [pc/main.py](pc/main.py) |
+| Запустить камеру двойным кликом | `pc/run_pc.bat` | [run_pc.bat](pc/run_pc.bat) |
+| Собрать `.exe` с иконкой | `python pc/main.py --build` или `pc/build_exe.bat` | [pc/main.py](pc/main.py) |
+| Запустить собранный `.exe` | `pc/dist/MLCamera/MLCamera.exe` | [MLCamera.exe](pc/dist/MLCamera/MLCamera.exe) |
 | Первая настройка проекта (ставит всё само) | `pc/setup.bat` | [setup.bat](pc/setup.bat) |
-| Собрать `.exe` с иконкой | `pc/build_exe.bat` → `pc/dist/MLCamera/MLCamera.exe` | [build_exe.bat](pc/build_exe.bat) |
-| Проверить, что уведомления доходят | `python main.py --self-test` | [main.py](main.py) |
+| Проверить, что уведомления доходят | `python pc/main.py --self-test` | [pc/main.py](pc/main.py) |
 | Прогнать тесты и самопроверку | `run_tests.bat` | [run_tests.bat](run_tests.bat) |
 
 ### ☁️ СЕРВЕР VPS (чтобы работало без ПК, 24/7)
