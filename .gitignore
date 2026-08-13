@@ -5,15 +5,27 @@ __pycache__/
 .venv/
 venv/
 
-# Данные (датасеты, БД, события, логи) — не коммитим
-data/datasets/**
-data/events/**
-data/db/**
-data/logs/**
-data/models/*.onnx
-data/models/*.pt
-data/models/*.pth
-data/snapshots/**
+# Данные: на гитхабе остаётся ТОЛЬКО структура папок (.gitkeep).
+# Само содержимое (фото, видео, БД, модели, логи, подписи людей) — нет.
+data/*
+!data/.gitkeep
+!data/**/
+!data/**/.gitkeep
+data/**/*.jpg
+data/**/*.jpeg
+data/**/*.png
+data/**/*.bmp
+data/**/*.webp
+data/**/*.mp4
+data/**/*.avi
+data/**/*.mkv
+data/**/*.db
+data/**/*.sqlite*
+data/**/*.onnx
+data/**/*.pt
+data/**/*.pth
+data/**/*.log
+data/datasets/**/README.txt
 data/test_video.mp4
 
 # IDE / ОС
