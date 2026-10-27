@@ -111,12 +111,17 @@ face:
 
 car:
   enabled: true
-  detect_classes: ["car", "truck", "bus", "motorbike"]
+  detect_classes: ["car", "truck", "bus", "motorcycle"]
   conf_threshold: 0.35
   color_enabled: true
-  brand_enabled: false      # требует обученной модели марок — см. scripts/train_brand_classifier.py
+  # Марка: готовая модель, обученная на Stanford Cars (49 марок).
+  #   python scripts/download_car_brand_model.py
+  brand_enabled: true
+  brand_tta: true
+  brand_min_conf: 0.25
   plate_enabled: true
-  # VPS: tesseract (лёгкий) | ПК: easyocr (точнее) — нужен pip install easyocr
+  # tesseract — лёгкий | easyocr — точнее | fastalpr — нейросеть (точнее всего)
+  # fastalpr: python scripts/install_alpr.py
   plate_engine: "tesseract"
   # Сколько кадров «голосуют» за номер (трекинг собирает OCR с каждого кадра,
   # берётся самый частый результат) — размытый номер читается точнее

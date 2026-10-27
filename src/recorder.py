@@ -28,11 +28,21 @@ _FOURCC = {"mp4v": "mp4v", "avc1": "avc1", "h264": "avc1"}
 
 
 class ClipRecorder:
-    def __init__(self, cfg, camera_name: str):
+    def __init__(self, cfg, camera_name: str, source_fps: float | None = None):
         r = cfg.recording
         self.enabled = bool(getattr(r, "enabled", False))
         self.mode = str(getattr(r, "mode", "events")).lower()
-        self.fps = max(1, int(getattr(r, "fps", 12)))
+        target_fps = max(1, int(getattr(r, "fps", 12)))
+        # Камера отдаёт, например, 25 кадров/с. Если писать их все в файл
+        # с fps=12, видео будет ускорено в 2 раза. Поэтому прореживаем кадры,
+        # сохраняя реальную длительность записи.
+        self._skip = 1
+        if source_fps and source_fps > 1:
+            self._skip = max(1, round(source_fps / target_fps))
+            self.fps = max(1.0, source_fps / self._skip)
+        else:
+            self.fps = float(target_fps)
+        self._frame_index = 0
         self.seconds_before = float(getattr(r, "seconds_before", 3))
         self.seconds_after = float(getattr(r, "seconds_after", 3))
         self.rotate_seconds = int(getattr(r, "rotate_seconds", 300))
@@ -53,6 +63,9 @@ class ClipRecorder:
     def push(self, frame) -> None:
         """Вызывается для КАЖДОГО кадра потока камеры."""
         if not self.enabled:
+            return
+        self._frame_index += 1
+        if self._skip > 1 and (self._frame_index - 1) % self._skip != 0:
             return
         with self._lock:
             self._size = (frame.shape[1], frame.shape[0])

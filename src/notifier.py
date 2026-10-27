@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 import time
 from pathlib import Path
 from typing import Iterable, Optional
@@ -31,16 +32,24 @@ class Notifier:
         self.tg_token = token if token and token != "PASTE_TELEGRAM_BOT_TOKEN" else ""
         self.chat_ids: list[str] = []
         chat_ids = cfg.notify.telegram.get("chat_ids", None)
-        if isinstance(chat_ids, list) and chat_ids:
+        if isinstance(chat_ids, (list, tuple)) and chat_ids:
             self.chat_ids = [str(c) for c in chat_ids]
-        elif str(cfg.notify.telegram.chat_id) not in ("", "PASTE_TELEGRAM_CHAT_ID"):
-            self.chat_ids = [str(cfg.notify.telegram.chat_id)]
-        self.tg_enabled = bool(self.tg_token and self.chat_ids)
+        elif isinstance(chat_ids, str) and chat_ids.strip() and chat_ids != "PASTE_TELEGRAM_CHAT_ID":
+            self.chat_ids = [chat_ids.strip()]
+        else:
+            single = cfg.notify.telegram.get("chat_id")
+            if single and str(single) != "PASTE_TELEGRAM_CHAT_ID":
+                self.chat_ids = [str(single)]
+        self.tg_enabled = bool(cfg.notify.telegram.get("enabled", True)
+                               and self.tg_token and self.chat_ids)
         self.push_enabled = bool(cfg.notify.push.enabled and cfg.notify.push.topic)
         self.delete_images = bool(cfg.notify.get("delete_images_after_send", False))
         self._last_sent_at = 0.0
         self._min_interval = float(cfg.notify.min_interval_seconds)
         self._session = requests.Session()
+        # Несколько камер пишут уведомления из разных потоков: сериализуем,
+        # иначе requests.Session и анти-спам счётчик могут гоняться.
+        self._lock = threading.RLock()
 
     # ---------- общий гейт (анти-спам) ----------
     def _allowed(self) -> bool:
@@ -53,6 +62,11 @@ class Notifier:
     def send_event(self, title: str, message: str, image_path: Optional[str] = None,
                    extra_images: Iterable[str] = ()) -> bool:
         """Отправляет событие во все каналы. Возвращает True, если хоть один канал сработал."""
+        with self._lock:
+            return self._send_event(title, message, image_path, extra_images)
+
+    def _send_event(self, title: str, message: str, image_path: Optional[str],
+                    extra_images: Iterable[str]) -> bool:
         if not self._allowed():
             return False
         if not (self.tg_enabled or self.push_enabled):

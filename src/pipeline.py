@@ -31,7 +31,7 @@ from src.face_recognizer import FaceRecognizer
 from src.motion import MotionDetector
 from src.night_vision import ensure_night_quality, is_low_light
 from src.notifier import Notifier
-from src.plate_recognizer import PlateRecognizer
+from src.plate_recognizer import PlateRecognizer, normalize_plate
 from src.recorder import ClipRecorder
 from src.tracker import CentroidTracker, majority_vote
 
@@ -60,7 +60,8 @@ class Pipeline:
             threshold=int(cfg.motion.get("threshold", 1500)),
             scale=float(cfg.motion.get("scale", 0.25)),
         ) if bool(cfg.motion.get("enabled", True)) else None
-        self.recorder = ClipRecorder(cfg, self.name) if bool(cfg.recording.get("enabled", False)) else None
+        self.recorder = (ClipRecorder(cfg, self.name, source_fps=self.cam.fps)
+                         if bool(cfg.recording.get("enabled", False)) else None)
 
         self.tracking_enabled = bool(self.cfg.tracking.get("enabled", True))
         self.face_tracker = CentroidTracker(
@@ -71,7 +72,12 @@ class Pipeline:
             max_disappeared=int(self.cfg.tracking.get("car_max_disappeared", 6)),
             max_distance=float(self.cfg.tracking.get("car_max_distance", 120)),
         ) if self.tracking_enabled else None
-        self.known_plates = [str(p) for p in (self.cfg.car.get("known_plates", []))]
+        # Номера в конфиге могут быть написаны кириллицей/с пробелами —
+        # приводим к тому же виду, что и результат OCR (A123BC 777).
+        self.known_plates = {
+            normalize_plate(str(p)) or str(p).strip().upper()
+            for p in (self.cfg.car.get("known_plates") or [])
+        }
 
         self._events_dir = cfg.storage.resolve(cfg.storage.events_dir)
         self._frame_count = 0
@@ -85,14 +91,22 @@ class Pipeline:
 
     # ---------- ленивая загрузка моделей ----------
     def _ensure_models(self) -> None:
-        if self.detector is None:
+        car_enabled = bool(self.cfg.car.get("enabled", True))
+        if self.detector is None and car_enabled:
             self.detector = YoloDetector(self.cfg, conf_threshold=float(self.cfg.car.conf_threshold))
         if self.face_recognizer is None and bool(self.cfg.face.get("enabled", True)):
             self.face_recognizer = FaceRecognizer(self.cfg)
-        if self.car_analyzer is None and bool(self.cfg.car.get("enabled", True)):
+        if self.car_analyzer is None and car_enabled:
             self.car_analyzer = CarAnalyzer(self.cfg)
-        if self.plate_recognizer is None and bool(self.cfg.car.get("plate_enabled", True)):
-            self.plate_recognizer = PlateRecognizer(self.cfg)
+        if (self.plate_recognizer is None and car_enabled
+                and bool(self.cfg.car.get("plate_enabled", True))):
+            try:
+                self.plate_recognizer = PlateRecognizer(self.cfg)
+            except Exception as exc:
+                # Без tesseract/easyocr камера всё равно должна работать:
+                # просто не читаем номера, а не падаем на старте.
+                log.error("Распознавание номеров отключено: %s", exc)
+                self.plate_recognizer = None
 
     # ---------- сохранение ----------
     def _save_image(self, frame, prefix: str) -> str:
@@ -146,17 +160,22 @@ class Pipeline:
         return avg
 
     # ---------- ЛИЦА ----------
-    def _maybe_line_cross(self, track) -> None:
-        """Определяем «вошёл/вышел» при пересечении линии entry_line_y."""
-        if "action" in track.data:
+    def _maybe_line_cross(self, track, frame_height: int) -> None:
+        """Определяем «вошёл/вышел» при пересечении линии entry_line_y.
+
+        entry_line_y — доля высоты кадра (0.0 сверху ... 1.0 снизу).
+        Если в конфиге случайно указали пиксели (> 1), тоже поддерживаем.
+        """
+        if "action" in track.data or frame_height <= 0:
             return
         prev, cur = track.prev_centroid, track.centroid
         if prev is None or cur is None:
             return
         line = float(self.cfg.tracking.get("entry_line_y", 0.5))
-        if prev[1] < line <= cur[1]:
+        line_y = line * frame_height if 0.0 < line <= 1.0 else line
+        if prev[1] < line_y <= cur[1]:
             track.data["action"] = "вошёл"
-        elif prev[1] >= line > cur[1]:
+        elif prev[1] >= line_y > cur[1]:
             track.data["action"] = "вышел"
 
     def _announce_face(self, frame, track, best_name: str) -> None:
@@ -191,30 +210,41 @@ class Pipeline:
         self.recorder.trigger("face") if self.recorder else None
         d["notified"] = True
 
-    def _process_faces(self, frame) -> None:
+    def _process_faces(self, work: np.ndarray, frame: np.ndarray,
+                       scale: float = 1.0) -> None:
+        """Лица ищутся на рабочем (возможно уменьшенном) кадре, а фото
+        сохраняется из полного кадра — поэтому bbox пересчитываем обратно."""
         if self.face_recognizer is None:
             return
-        matches, _ = self.face_recognizer.recognize(frame)
+        matches, _ = self.face_recognizer.recognize(work)
         boxes = [m.bbox for m in matches]
+        inv = 1.0 / scale if scale > 0 else 1.0
+
+        def full_bbox(bbox: tuple) -> tuple:
+            x1, y1, x2, y2 = bbox
+            return (int(x1 * inv), int(y1 * inv), int(x2 * inv), int(y2 * inv))
+
         if self.face_tracker is None:
             # старый путь: каждое появление с кулдауном
             for m in matches:
                 fake = Track_stub()
-                fake.data.update({"sim": m.similarity, "bbox": m.bbox})
+                fake.data.update({"sim": m.similarity, "bbox": full_bbox(m.bbox)})
                 self._announce_face(frame, fake, m.name)
             return
         tracks = self.face_tracker.update(boxes)
+        # лицам «потерянные» треки не нужны — просто не копим их в памяти
+        self.face_tracker.pop_removed()
         min_frames = int(self.cfg.tracking.get("min_frames_to_notify", 3))
         for track, m in zip(tracks, matches):
             if track is None:
                 continue
             d = track.data
             d.setdefault("votes", Counter())
-            d.setdefault("bbox", m.bbox)
-            d["bbox"] = m.bbox
+            d.setdefault("bbox", full_bbox(m.bbox))
+            d["bbox"] = full_bbox(m.bbox)
             d["sim"] = max(d.get("sim", 0.0), m.similarity)
             d["votes"][m.name] += 1
-            self._maybe_line_cross(track)
+            self._maybe_line_cross(track, work.shape[0])
             if d.get("notified"):
                 continue
             if track.seen < min_frames:
@@ -223,15 +253,49 @@ class Pipeline:
             self._announce_face(frame, track, best)
 
     # ---------- АВТОМОБИЛИ ----------
+    @staticmethod
+    def _remember_best_crop(track_data: dict, crop, full_frame, conf: float) -> bool:
+        """Запоминает лучшую (самую крупную и уверенную) вырезку машины за трек.
+
+        Марка определяется один раз при финализации — по лучшему кадру, а не
+        на каждом кадре. Это и точнее (машина ближе/резче), и дешевле по CPU.
+        """
+        if crop is None or crop.size == 0:
+            return False
+        h, w = crop.shape[:2]
+        score = float(h * w) * (0.5 + max(0.0, min(1.0, conf)))
+        if score <= float(track_data.get("best_crop_score", 0.0)):
+            return False
+        # не держим в памяти полноразмерные вырезки
+        max_side = 640
+        if max(h, w) > max_side:
+            scale = max_side / float(max(h, w))
+            crop = cv2.resize(crop, (max(1, int(w * scale)), max(1, int(h * scale))),
+                              interpolation=cv2.INTER_AREA)
+        track_data["best_crop"] = crop.copy()
+        track_data["best_crop_score"] = score
+        # полный кадр нужен только для фото события; жмём редко, а не каждый кадр
+        ok, buf = cv2.imencode(".jpg", full_frame)
+        if ok:
+            track_data["last_jpg"] = buf.tobytes()
+        return True
+
     def _finalize_car(self, frame, track) -> None:
         d = track.data
         plate = majority_vote(d.get("plate_votes", []))
         if plate and self.db.is_in_cooldown("car", plate, float(self.cfg.car.cooldown_minutes)):
             d["notified"] = True
             return
-        brand, color = d.get("brand", "unknown"), d.get("color", "unknown")
+        info = None
+        crop = d.get("best_crop")
+        if crop is not None and self.car_analyzer is not None:
+            info = self.car_analyzer.analyze(crop)
+        brand = info.brand if info is not None else d.get("brand", "unknown")
+        color = info.color if info is not None else d.get("color", "unknown")
         img = str(self._save_image_bytes(d.get("last_jpg", b""), "car")) if d.get("last_jpg") else ""
-        self.db.save_car_event(self.name, plate or "", brand, color, img, "")
+        plate_img = (str(self._save_image_bytes(d["plate_crop_jpg"], "plate"))
+                     if d.get("plate_crop_jpg") else "")
+        self.db.save_car_event(self.name, plate or "", brand, color, img, plate_img)
         if plate:
             known = plate in self.known_plates
             title = "Своя машина" if known else f"Чужая машина {plate}"
@@ -239,36 +303,78 @@ class Pipeline:
             title = "Автомобиль (номер не распознан)"
         self.notifier.send_event(title,
                                  f"Камера {self.name}\nМарка: {brand}\nЦвет: {color}\nНомер: {plate or '—'}",
-                                 img)
+                                 img,
+                                 extra_images=[plate_img] if plate_img else ())
         self.recorder.trigger("car") if self.recorder else None
         d["notified"] = True
 
-    def _process_vehicles(self, frame, dets) -> None:
-        if not dets or self.car_analyzer is None:
+    def _read_plate(self, zone: Optional[np.ndarray]) -> str:
+        """OCR номера с защитой: если движок сломался — отключаем, но камеру не роняем."""
+        if self.plate_recognizer is None or zone is None:
+            return ""
+        try:
+            plate, _ = self.plate_recognizer.read(zone)
+            return plate
+        except Exception as exc:
+            log.error("Распознавание номеров отключено из-за ошибки: %s", exc)
+            self.plate_recognizer = None
+            return ""
+
+    def _plate_from_car(self, full_frame: np.ndarray,
+                        bbox: tuple) -> tuple[str, Optional[np.ndarray]]:
+        """Номер и картинка номера для машины с боксом в координатах полного кадра.
+
+        Если установлен детектор номеров (FastALPR) — ищем номер во всей области
+        машины (точнее, чем эвристическая нижняя полоса). Иначе — старая схема:
+        нижняя центральная полоса + tesseract/easyocr.
+        """
+        if self.plate_recognizer is None:
+            return "", None
+        try:
+            if getattr(self.plate_recognizer, "uses_frame", False):
+                region = PlateRecognizer.car_crop(full_frame, bbox)
+                plate, _ = self.plate_recognizer.read_frame(region)
+                return plate, getattr(self.plate_recognizer, "last_crop", None)
+            zone = PlateRecognizer.plate_crop_from_car(full_frame, bbox)
+            return self._read_plate(zone), zone
+        except Exception as exc:
+            log.error("Распознавание номеров отключено из-за ошибки: %s", exc)
+            self.plate_recognizer = None
+            return "", None
+
+    def _process_vehicles(self, work: np.ndarray, dets, frame: Optional[np.ndarray] = None,
+                          scale: float = 1.0) -> None:
+        """Машины ищутся на рабочем кадре, а события сохраняются из полного."""
+        if self.car_analyzer is None:
             return
+        dets = list(dets or [])
+        full_frame = frame if frame is not None else work
+        inv = 1.0 / scale if scale > 0 else 1.0
+
+        def full_bbox(bbox: tuple) -> tuple:
+            x1, y1, x2, y2 = bbox
+            return (int(x1 * inv), int(y1 * inv), int(x2 * inv), int(y2 * inv))
+
         boxes = [d.bbox for d in dets]
         vote_frames = int(self.cfg.car.get("plate_vote_frames", 5))
         if self.car_tracker is None:
             # старый путь: один кадр, без трекинга
-            zone = None
             for det in dets:
-                crop = det.crop(frame)
-                info = self.car_analyzer.analyze(crop) if crop is not None else None
-                if info is None:
+                crop = det.crop(work)
+                if crop is None or crop.size == 0:
                     continue
-                plate = ""
-                if self.plate_recognizer is not None:
-                    zone = PlateRecognizer.plate_crop_from_car(frame, det.bbox)
-                    if zone is not None:
-                        plate, _ = self.plate_recognizer.read(zone)
+                info = self.car_analyzer.analyze(crop)
+                bbox_full = full_bbox(det.bbox)
+                plate, plate_crop = self._plate_from_car(full_frame, bbox_full)
                 if plate and self.db.is_in_cooldown("car", plate, float(self.cfg.car.cooldown_minutes)):
                     continue
-                full = str(self._save_image(frame, "car"))
-                crop_img = str(self._save_image(zone, "plate")) if zone is not None else ""
+                full = str(self._save_image(full_frame, "car"))
+                crop_img = str(self._save_image(plate_crop, "plate")) if plate_crop is not None else ""
                 self.db.save_car_event(self.name, plate, info.brand, info.color, full, crop_img)
                 parts = [f"Камера {self.name}", f"Марка: {info.brand}", f"Цвет: {info.color}"]
                 parts.append(f"Номер: {plate}" if plate else "Номер: не распознан")
-                self.notifier.send_event("Автомобиль", "\n".join(parts), full, extra_images=[crop_img] if crop_img else ())
+                self.notifier.send_event("Автомобиль", "\n".join(parts), full,
+                                          extra_images=[crop_img] if crop_img else ())
                 self.recorder.trigger("car") if self.recorder else None
             return
 
@@ -277,39 +383,45 @@ class Pipeline:
             if track is None:
                 continue
             d = track.data
-            d.setdefault("plate_votes", [])
-            crop = det.crop(frame)
-            info = self.car_analyzer.analyze(crop) if crop is not None else None
-            if info is not None:
-                d["brand"] = info.brand
-                d["color"] = info.color
-            ok, buf = cv2.imencode(".jpg", frame)
-            if ok:
-                d["last_jpg"] = buf.tobytes()
-            if self.plate_recognizer is not None:
-                zone = PlateRecognizer.plate_crop_from_car(frame, det.bbox)
-                if zone is not None:
-                    plate, _ = self.plate_recognizer.read(zone)
-                    if plate and plate not in d["plate_votes"][-5:]:
-                        d["plate_votes"].append(plate)
             if d.get("notified"):
+                # событие уже отправлено — не тратим CPU на OCR и вырезки
                 continue
-            # финализируем: трек пропал ИЛИ набрали достаточно кадров
-            if track.disappeared >= 2 or track.seen >= vote_frames:
-                self._finalize_car(frame, track)
+            d.setdefault("plate_votes", [])
+            crop = det.crop(work)
+            self._remember_best_crop(d, crop, full_frame, det.conf)
+            bbox_full = full_bbox(det.bbox)
+            plate, plate_crop = self._plate_from_car(full_frame, bbox_full)
+            if plate and plate not in d["plate_votes"][-5:]:
+                d["plate_votes"].append(plate)
+                if plate_crop is not None and plate_crop.size:
+                    ok_p, buf_p = cv2.imencode(".jpg", plate_crop)
+                    if ok_p:
+                        d["plate_crop_jpg"] = buf_p.tobytes()
+            # Финализируем, когда набрали достаточно кадров...
+            if track.seen >= vote_frames:
+                self._finalize_car(full_frame, track)
+
+        # ...или когда машина уехала, так и не набрав vote_frames.
+        # Трекер отдаёт такие «потерянные» треки только при удалении.
+        for track in self.car_tracker.pop_removed():
+            if not track.data.get("notified"):
+                self._finalize_car(full_frame, track)
 
     # ---------- отрисовка рамок (превью) ----------
     @staticmethod
-    def _draw_boxes(frame, dets) -> None:
+    def _draw_boxes(frame, dets, scale: float = 1.0) -> None:
+        inv = 1.0 / scale if scale > 0 else 1.0
         for d in dets:
-            cv2.rectangle(frame, (d.x1, d.y1), (d.x2, d.y2), (0, 255, 0), 2)
-            cv2.putText(frame, f"{d.label} {d.conf:.2f}", (d.x1, max(0, d.y1 - 5)),
+            x1, y1 = int(d.x1 * inv), int(d.y1 * inv)
+            x2, y2 = int(d.x2 * inv), int(d.y2 * inv)
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            cv2.putText(frame, f"{d.label} {d.conf:.2f}", (x1, max(0, y1 - 5)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
     # ---------- главный цикл ----------
     def run(self, max_frames: Optional[int] = None) -> None:
         self._ensure_models()
-        force_interval = int(self.cfg.motion.get("force_interval_frames", 300))
+        force_interval = max(1, int(self.cfg.motion.get("force_interval_frames", 300)))
         detect_every = max(1, int(self.cfg.analysis.detect_every_n_frames))
         frame_scale = float(self.cfg.analysis.frame_scale)
         small_scale = float(self.cfg.analysis.get("small_frame_scale", 0.5))
@@ -319,64 +431,72 @@ class Pipeline:
 
         log.info("Поток камеры '%s' запущен (трекинг=%s)", self.name, self.tracking_enabled)
         frames = 0
-        while True:
-            # ночное усреднение кадров (шуменьше → номер/лицо читается в темноте)
-            frame = self._read_averaged()
-            if frame is None:
-                if max_frames is not None:
-                    break
-                time.sleep(1.0)
-                continue
-            frames += 1
-            self._frame_count += 1
+        try:
+            while True:
+                # ночное усреднение кадров (шума меньше → номер/лицо читается в темноте)
+                frame = self._read_averaged()
+                if frame is None:
+                    if self.cam.is_file:
+                        log.info("Видеофайл закончился — останавливаю камеру '%s'", self.name)
+                        break
+                    if max_frames is not None:
+                        break
+                    time.sleep(1.0)
+                    continue
+                frames += 1
+                self._frame_count += 1
 
-            if bool(self.cfg.camera.night_enabled):
-                _, frame = ensure_night_quality(frame, int(self.cfg.camera.night_brightness_threshold))
+                if bool(self.cfg.camera.night_enabled):
+                    _, frame = ensure_night_quality(frame, int(self.cfg.camera.night_brightness_threshold))
 
-            if self.recorder is not None:
-                self.recorder.push(frame)
+                if self.recorder is not None:
+                    self.recorder.push(frame)
 
-            motion_hit = self.motion.detect(frame) if self.motion is not None else True
-            every_hit = (self._frame_count % detect_every == 0)
-            force_hit = (self._frame_count % force_interval == 0)
+                motion_hit = self.motion.detect(frame) if self.motion is not None else True
+                every_hit = (self._frame_count % detect_every == 0)
+                force_hit = (self._frame_count % force_interval == 0)
 
-            analyze = False
-            work = frame
-            if motion_hit and (every_hit or force_hit):
-                analyze = True
-                if frame_scale < 1.0:
-                    h, w = frame.shape[:2]
-                    work = cv2.resize(frame, (int(w * frame_scale), int(h * frame_scale)))
-            elif force_hit and multi_res:
-                # нет движения, но периодически «прочёсываем» мелким кадром
-                analyze = True
-                if small_scale < 1.0:
-                    h, w = frame.shape[:2]
-                    work = cv2.resize(frame, (int(w * small_scale), int(h * small_scale)))
+                analyze = False
+                work = frame
+                if motion_hit and (every_hit or force_hit):
+                    analyze = True
+                    if frame_scale < 1.0:
+                        h, w = frame.shape[:2]
+                        work = cv2.resize(frame, (int(w * frame_scale), int(h * frame_scale)))
+                elif force_hit and multi_res:
+                    # нет движения, но периодически «прочёсываем» мелким кадром
+                    analyze = True
+                    if small_scale < 1.0:
+                        h, w = frame.shape[:2]
+                        work = cv2.resize(frame, (int(w * small_scale), int(h * small_scale)))
 
-            if analyze:
-                dets = []
-                if bool(self.cfg.face.get("enabled", True)):
-                    self._process_faces(work)
-                if bool(self.cfg.car.get("enabled", True)) and self.detector:
-                    dets = self.detector.predict_vehicles(work)
-                    self._process_vehicles(work, dets)
+                if analyze:
+                    # координаты пересчитываются обратно в полный кадр
+                    scale = work.shape[1] / frame.shape[1] if frame.shape[1] else 1.0
+                    dets = []
+                    if bool(self.cfg.face.get("enabled", True)):
+                        self._process_faces(work, frame, scale)
+                    if bool(self.cfg.car.get("enabled", True)) and self.detector:
+                        dets = self.detector.predict_vehicles(work)
+                        self._process_vehicles(work, dets, frame, scale)
+                    if preview:
+                        self._draw_boxes(frame, dets, scale)
+
                 if preview:
-                    self._draw_boxes(frame, dets)
+                    cv2.imshow(win, frame)
+                    if cv2.waitKey(1) & 0xFF == ord("q"):
+                        break
 
-            if preview:
-                cv2.imshow(win, frame)
-                if cv2.waitKey(1) & 0xFF == ord("q"):
+                delay = float(self.cfg.analysis.get("debug_delay", 0.0))
+                if delay > 0:
+                    time.sleep(delay)
+                if max_frames is not None and frames >= max_frames:
                     break
-
-            delay = float(self.cfg.analysis.get("debug_delay", 0.0))
-            if delay > 0:
-                time.sleep(delay)
-            if max_frames is not None and frames >= max_frames:
-                break
-        if self.recorder is not None:
-            self.recorder.close()
-        self.cam.close()
+        finally:
+            if self.recorder is not None:
+                self.recorder.close()
+            self.cam.close()
+            log.info("Поток камеры '%s' остановлен (кадров: %d)", self.name, frames)
 
     def close(self) -> None:
         try:

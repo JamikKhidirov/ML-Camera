@@ -20,6 +20,7 @@ class Camera:
         self.reconnect_delay = reconnect_delay
         self._cap: Optional[cv2.VideoCapture] = None
         self._last_error_at = 0.0
+        self.fps = 0.0
         self.open()
 
     @staticmethod
@@ -28,6 +29,11 @@ class Camera:
             return False
         s = str(source).lower()
         return s.endswith((".mp4", ".avi", ".mkv", ".mov", ".jpg", ".png"))
+
+    @property
+    def is_file(self) -> bool:
+        """True для видеофайла/картинки (а не RTSP/веб-камеры)."""
+        return self._is_file(self.source)
 
     def open(self) -> None:
         self._release()
@@ -46,6 +52,10 @@ class Camera:
         if not self._is_file(self.source):
             self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
             self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
+        try:
+            self.fps = float(self._cap.get(cv2.CAP_PROP_FPS) or 0.0)
+        except Exception:
+            self.fps = 0.0
 
     def _release(self) -> None:
         if self._cap is not None:

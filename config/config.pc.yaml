@@ -70,12 +70,23 @@ face:
 
 car:
   enabled: true
-  detect_classes: ["car", "truck", "bus", "motorbike"]
+  detect_classes: ["car", "truck", "bus", "motorcycle"]
   conf_threshold: 0.35
   color_enabled: true
-  brand_enabled: true            # включи после обучения scripts/train_brand_classifier.py
+  # Марка: готовая модель ConvNeXt-Tiny (49 марок). Скачать:
+  #   python scripts/download_car_brand_model.py
+  brand_enabled: true
+  brand_tta: true                 # усреднение с отражением — чуть точнее
+  brand_min_conf: 0.25            # ниже порога -> "unknown", а не случайная марка
   plate_enabled: true
-  plate_engine: "easyocr"        # точнее на ПК (поставится из requirements-pc.txt)
+  # fastalpr — нейросеть (детектор YOLOv9 + европейский OCR), точнее всего.
+  # Установка: python scripts/install_alpr.py
+  # Альтернативы: easyocr (тяжёлый) / tesseract (лёгкий).
+  plate_engine: "fastalpr"
+  alpr_detector: "yolo-v9-t-384-license-plate-end2end"
+  alpr_ocr: "european-plates-mobile-vit-v2-model"
+  alpr_conf: 0.35
+  alpr_providers: ["CPUExecutionProvider"]   # можно DmlExecutionProvider
   plate_vote_frames: 5
   known_plates:
     # - "A123BC 777"

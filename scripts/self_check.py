@@ -82,7 +82,12 @@ def main() -> int:
         names = sorted(p.name for p in raw.iterdir() if p.is_dir())
         ok(f"Люди: {names}")
         if names:
-            ok("у каждого есть README.txt" if all((raw / n / "README.txt").exists() for n in names) else "")
+            missing = [n for n in names if not (raw / n / "README.txt").exists()]
+            # Пустая папка без README — не поломка: её мог создать add_person.py.
+            # Поэтому это предупреждение, а не ошибка.
+            (ok if not missing else skip)(
+                "у каждого есть README.txt" if not missing
+                else f"нет README.txt (не критично): {missing}")
     else:
         skip("папка data/datasets/raw не найдена")
 
@@ -94,7 +99,8 @@ def main() -> int:
     db.save_car_event("cam1", "A123BC 777", "Toyota", "white", "img.jpg", "crop.jpg")
     rows = db.recent_events()
     ok(f"записано событий: {len(rows)}")
-    ok("кулдаун работает" if db.is_in_cooldown("face", "Алексей", 60) else "")
+    (ok if db.is_in_cooldown("face", "Алексей", 60) else bad)(
+        "кулдаун работает" if db.is_in_cooldown("face", "Алексей", 60) else "кулдаун сломан")
     db.close()
     (ROOT / "data/db/selfcheck.db").unlink(missing_ok=True)
 
@@ -107,9 +113,12 @@ def main() -> int:
     moving = np.zeros((180, 320, 3), np.uint8)
     moving[40:100, 80:240] = (200, 200, 200)
     detected = md.detect(moving)
-    static = md.detect(np.zeros((180, 320, 3), np.uint8))
-    ok(f"движение поймано: {detected}" if detected else f"движение НЕ поймано: {detected}")
-    ok(f"покой не срабатывает: {not static}" if not static else "ложное срабатывание")
+    md.detect(base)          # вернулись в «покой» (это ещё изменение кадра)
+    static = md.detect(base)  # два одинаковых кадра подряд — движения быть не должно
+    (ok if detected else bad)(
+        f"движение поймано: {detected}" if detected else f"движение НЕ поймано: {detected}")
+    (ok if not static else bad)(
+        f"покой не срабатывает: {not static}" if not static else "ложное срабатывание движения")
 
     # ---------- 6. цвет машины ----------
     section("6. Цвет автомобиля")
@@ -172,7 +181,7 @@ def main() -> int:
         rec.push(np.zeros((180, 320, 3), np.uint8))
     rec.close()
     clips = list((ROOT / "data/videos/selfcheck").glob("*.mp4"))
-    ok(f"клип создан: {clips[0].name}" if clips else "клип НЕ создан")
+    (ok if clips else bad)(f"клип создан: {clips[0].name}" if clips else "клип НЕ создан")
     for f in (ROOT / "data/videos/selfcheck").glob("*.mp4"):
         f.unlink()
 

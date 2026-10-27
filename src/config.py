@@ -48,6 +48,10 @@ class Config:
 
 def load_config(path: str | Path | None = None) -> Config:
     cfg_path = Path(path) if path else CONFIG_PATH
+    # Если путь относительный и его нет в текущей папке — ищем от корня проекта.
+    # Так скрипты можно запускать из любой директории, а не только из корня.
+    if not cfg_path.is_absolute() and not cfg_path.exists():
+        cfg_path = PROJECT_ROOT / cfg_path
     if not cfg_path.exists():
         raise FileNotFoundError(f"Конфиг не найден: {cfg_path}")
     with open(cfg_path, "r", encoding="utf-8") as f:

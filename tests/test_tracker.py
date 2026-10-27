@@ -49,3 +49,22 @@ def test_tracks_aligned_with_boxes():
     assert all(x is not None for x in res)
     ids = {r.id for r in res if r}
     assert len(ids) == 2
+
+
+def test_removed_tracks_are_reported_once():
+    """Машина уехала, вторая осталась: трекер не теряет живую и отдаёт
+    исчезнувшую ровно один раз (по ней надо успеть отправить уведомление)."""
+    tr = CentroidTracker(max_disappeared=1)
+    a, b = tr.update([_box(10, 10), _box(300, 300)])
+    assert tr.pop_removed() == []
+
+    # первый кадр без объекта A: B живёт, A пока «пропала»
+    tr.update([_box(300, 300)])
+    assert tr.pop_removed() == []
+
+    # второй кадр: A превысила лимит и удаляется
+    alive = tr.update([_box(300, 300)])
+    removed = tr.pop_removed()
+    assert len(removed) == 1 and removed[0] is a
+    assert tr.pop_removed() == []            # повторно не отдаётся
+    assert alive[0] is b                   # живой трек не задет

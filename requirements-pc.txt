@@ -1,7 +1,11 @@
 # Дополнительные пакеты для МОЩНОЙ ПК-версии (config/config.pc.yaml)
 # Установка:  pip install -r requirements-pc.txt
+#
+# Нейросетевые номера (FastALPR, точнее всего) ставятся отдельно:
+#   python scripts/install_alpr.py
+# (не через requirements: пакет тянет opencv-headless и ломает окно превью)
 
-# Точное распознавание номеров (torch уже стоит вместе с ultralytics)
+# Резервный OCR номеров (torch уже стоит вместе с ultralytics)
 easyocr>=1.7
 
 # Видеокарта AMD (RX 5700 XT) для ускорения распознавания лиц через DirectML.

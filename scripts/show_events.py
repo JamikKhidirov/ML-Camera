@@ -1,9 +1,12 @@
 """Просмотр событий из БД.
 
-Запуск: python scripts/show_events.py [кол-во]
+Запуск:
+  python scripts/show_events.py [кол-во]
+  python scripts/show_events.py [кол-во] --config config/config.pc.yaml
 """
 from __future__ import annotations
 
+import argparse
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -16,12 +19,22 @@ from src.database import Database  # noqa: E402
 
 
 def main() -> int:
-    limit = int(sys.argv[1]) if len(sys.argv) > 1 else 50
-    cfg = load_config()
+    parser = argparse.ArgumentParser(description="Показать последние события")
+    parser.add_argument("limit", nargs="?", type=int, default=50, help="сколько событий (по умолчанию 50)")
+    parser.add_argument("--config", default=None,
+                        help="путь к config.yaml (напр. config/config.pc.yaml)")
+    args = parser.parse_args()
+
+    cfg = load_config(args.config)
     db = Database(cfg)
-    for r in db.recent_events(limit):
+    rows = db.recent_events(args.limit)
+    if not rows:
+        print("Событий пока нет.")
+    for r in rows:
         ts = datetime.fromtimestamp(r["ts"]).strftime("%Y-%m-%d %H:%M:%S")
-        print(f"[{ts}] {r['camera'] or '?'}: {r['title']} | {r.get('extra', '')} | {r.get('image_path', '')}")
+        extra = r.get("extra") or ""
+        image_path = r.get("image_path") or ""
+        print(f"[{ts}] {r['camera'] or '?'}: {r['title']} | {extra} | {image_path}")
     db.close()
     return 0
 

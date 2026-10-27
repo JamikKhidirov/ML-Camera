@@ -126,6 +126,15 @@ def main() -> int:
                       dynamic_axes={"image": {0: "batch"}, "logits": {0: "batch"}})
     labels_path = ROOT / "data/models/car_brand_labels.json"
     labels_path.write_text(json.dumps(labels, ensure_ascii=False), encoding="utf-8")
+    # метаданные: как готовить вход (эта модель обучалась на 224x224, [-1, 1])
+    meta_path = ROOT / "data/models/car_brand_meta.json"
+    meta_path.write_text(json.dumps({
+        "input_size": 224,
+        "resize": "stretch",
+        "mean": [0.5, 0.5, 0.5],
+        "std": [0.5, 0.5, 0.5],
+        "classes": labels,
+    }, ensure_ascii=False, indent=2), encoding="utf-8")
     log.info("Модель марки готова: %s + %s", out_path, labels_path)
     return 0
 

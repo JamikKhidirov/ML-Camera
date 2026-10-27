@@ -11,6 +11,7 @@
 """
 from __future__ import annotations
 
+import argparse
 import logging
 import sys
 from pathlib import Path
@@ -26,10 +27,16 @@ log = logging.getLogger(__name__)
 
 
 def main() -> int:
-    cfg = load_config()
+    parser = argparse.ArgumentParser(description="Вырезать лица из сырых фото")
+    parser.add_argument("--config", default=None,
+                        help="путь к config.yaml (напр. config/config.pc.yaml)")
+    args = parser.parse_args()
+
+    cfg = load_config(args.config)
     total = collect_faces(cfg)
     if total:
-        print("Теперь: python scripts/register_faces.py  (или python main.py --register)")
+        c = f" --config {args.config}" if args.config else ""
+        print(f"Теперь: python scripts/register_faces.py{c}  (или python main.py{c} --register)")
     return 0 if total else 1
 
 

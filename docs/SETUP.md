@@ -28,19 +28,28 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-Для распознавания номеров по-лёгкому нужен **tesseract** в системе:
+Для распознавания номеров есть три варианта:
 
-- **Windows**: скачай установщик https://github.com/UB-Mannheim/tesseract/wiki
-  (ставь галочку на Russian language data), затем:
-  ```python
-  import pytesseract
-  pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+- **FastALPR (рекомендуется, нейросеть)** — точнее всего, ставится скриптом:
+  ```bash
+  python scripts/install_alpr.py
   ```
-  (эту строчку добавь в `src/plate_recognizer.py` после импорта)
-- **Linux/сервер**: `apt install -y tesseract-ocr tesseract-ocr-rus` (в Docker уже есть)
+  В `config/config.pc.yaml` уже стоит `plate_engine: "fastalpr"`.
+- **tesseract (лёгкий, для слабого VPS)** — нужен tesseract в системе:
 
-> Не хочешь ставить tesseract? Тогда в конфиге поставь `plate_engine: "easyocr"`
-> и выполни `pip install easyocr` — но учти, что он тянет torch (~2 ГБ) и медленный.
+  - **Windows**: скачай установщик https://github.com/UB-Mannheim/tesseract/wiki
+    (ставь галочку на Russian language data), затем:
+    ```python
+    import pytesseract
+    pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+    ```
+    (эту строчку добавь в `src/plate_recognizer.py` после импорта)
+  - **Linux/сервер**: `apt install -y tesseract-ocr tesseract-ocr-rus` (в Docker уже есть)
+
+- **easyocr (запасной)** — `plate_engine: "easyocr"` + `pip install easyocr`.
+  Тянет torch (~2 ГБ) и медленный на CPU.
+
+> Полный список моделей, их размеры, лицензии и ограничения: `docs/MODELS.md`.
 
 ---
 

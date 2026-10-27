@@ -28,6 +28,19 @@ def main() -> int:
         p = ROOT / "data/datasets" / sub / name
         p.mkdir(parents=True, exist_ok=True)
         print(f"[ok] {p.relative_to(ROOT)}")
+    hint = ROOT / "data/datasets/raw" / name / "README.txt"
+    if not hint.exists():
+        hint.write_text(
+            f"ПОЛОЖИ СЮДА ФОТОГРАФИИ: {name}\n"
+            "=======================================\n\n"
+            "Что делать:\n"
+            "  1) положи сюда 15-25 чётких фото (анфас, повороты, разное освещение);\n"
+            "  2) добавь имя в config/*.yaml -> people.names;\n"
+            "  3) python scripts/collect_faces.py\n"
+            "  4) python scripts/register_faces.py\n"
+            "Сколько фото и как снимать: docs/DATASET.md\n",
+            encoding="utf-8",
+        )
 
     print("\nДальше:")
     print(f"  1) кидай фото: data/datasets/raw/{name}/")

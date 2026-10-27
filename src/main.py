@@ -102,22 +102,28 @@ def main() -> int:
     if args.register:
         from src.face_setup import register_all
         people = register_all(cfg)
-        print(f"\nПодготовлено людей: {people}. Можно запускать камеру: python main.py")
         db.close()
-        return 0
+        if people:
+            print(f"\nПодготовлено людей: {people}. Можно запускать камеру: "
+                  f"python main.py --config config/config.pc.yaml")
+            return 0
+        print("\nНикто не зарегистрирован: положи фото в data/datasets/raw/<ИМЯ>/ "
+              "и повтори регистрацию.")
+        return 1
 
-    cameras = cfg.cameras if isinstance(cfg.cameras, list) else (cfg.cameras.get("cameras") or [])
+    cameras = cfg.get("cameras", [])
+    if isinstance(cameras, dict):
+        cameras = cameras.get("cameras") or []
     if args.cameras is not None:
-        cameras = [cameras[i] for i in args.cameras if i < len(cameras)]
-    enabled = [c for c in cameras if bool(c.get("enabled", True)) if isinstance(c, dict)]
+        cameras = [cameras[i] for i in args.cameras if 0 <= i < len(cameras)]
+    enabled = [c for c in cameras if isinstance(c, dict) and bool(c.get("enabled", True))]
     if not enabled:
-        log.error("Нет включённых камер в config.yaml (cameras[].enabled)")
+        log.error("Нет включённых камер в %s (cameras[].enabled)", args.config or "config.yaml")
         db.close()
         return 1
 
     max_frames = 30 if args.once else None
     stop = threading.Event()
-    executor = ThreadPoolExecutor(max_workers=max(1, len(enabled)))
 
     def _sig(*_):
         stop.set()
@@ -129,18 +135,36 @@ def main() -> int:
     if not args.once:
         digest_t.start()
 
+    # Одна камера (самый частый случай, особенно ПК с окном) — запускаем
+    # в ГЛАВНОМ потоке: cv2.imshow/waitKey не любят рабочие потоки.
+    if len(enabled) == 1 or args.once:
+        cam_cfg = enabled[0]
+        pipe = Pipeline(cfg, cam_cfg, db, notifier)
+        try:
+            pipe.run(max_frames)
+        except KeyboardInterrupt:
+            log.info("Остановлено пользователем")
+        except Exception:
+            log.exception("Ошибка камеры '%s'", cam_cfg.get("name", "cam"))
+            return 1
+        finally:
+            stop.set()
+            db.close()
+        return 0
+
+    executor = ThreadPoolExecutor(max_workers=len(enabled))
     futures = []
     for cam_cfg in enabled:
         pipe = Pipeline(cfg, cam_cfg, db, notifier)
         futures.append(executor.submit(pipe.run, max_frames))
-        if args.once:  # в отладке не грузим все камеры одновременно
-            break
 
     try:
         for fut in futures:
             fut.result()
-    except Exception as exc:
-        log.error("Ошибка в потоке камеры: %s", exc)
+    except KeyboardInterrupt:
+        log.info("Остановлено пользователем")
+    except Exception:
+        log.exception("Ошибка в потоке камеры")
     finally:
         stop.set()
         executor.shutdown(wait=True)

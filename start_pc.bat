@@ -30,8 +30,14 @@ echo   Запись видео: data\videos\
 echo   Чтобы выйти из окна: нажми Q
 echo ============================================================
 
-REM запуск с предпросмотром и записью
-python main.py --preview
+REM Запускаем именно ПК-версию (config\config.pc.yaml + окно + запись).
+REM pc\main.py сам подставит правильный конфиг, поэтому не теряются
+REM модель лиц (buffalo_l) и настройки записи видео.
+if exist .venv\Scripts\python.exe (
+    .venv\Scripts\python.exe pc\main.py
+) else (
+    python pc\main.py
+)
 
 echo.
 echo Программа завершилась. Если это ошибка — покажи текст выше.

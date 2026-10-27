@@ -51,6 +51,9 @@ class CentroidTracker:
         self.max_distance = max_distance
         self.next_id = 0
         self.tracks: dict[int, Track] = {}
+        # Треки, которые только что исчезли (нужны, чтобы успеть отправить
+        # уведомление о машине, которая уехала до набора vote_frames).
+        self.removed: list[Track] = []
 
     # ---------- внутреннее ----------
     def _register(self, centroid) -> Track:
@@ -60,7 +63,14 @@ class CentroidTracker:
         return tr
 
     def _deregister(self, track_id: int) -> None:
-        self.tracks.pop(track_id, None)
+        tr = self.tracks.pop(track_id, None)
+        if tr is not None:
+            self.removed.append(tr)
+
+    def pop_removed(self) -> list[Track]:
+        """Вернуть исчезнувшие треки и очистить список."""
+        out, self.removed = self.removed, []
+        return out
 
     def _match(self, centroids: list) -> list:
         """Гридди-матчинг: каждой новой точке — ближайший живой трек (жадный)."""
@@ -112,8 +122,9 @@ class CentroidTracker:
                 tr.seen += 1
                 per_box[cidx] = tr
 
-        # треки без пары — «пропали» на кадр
-        for tid, tr in self.tracks.items():
+        # треки без пары — «пропали» на кадр.
+        # list(...) обязателен: _deregister меняет словарь, а не только значения.
+        for tid, tr in list(self.tracks.items()):
             if tid not in matched_tracks:
                 tr.disappeared += 1
                 if tr.disappeared > self.max_disappeared:

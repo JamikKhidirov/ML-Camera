@@ -74,10 +74,12 @@ face:
 
 car:
   enabled: true
-  detect_classes: ["car", "truck", "bus", "motorbike"]
+  detect_classes: ["car", "truck", "bus", "motorcycle"]
   conf_threshold: 0.35
   color_enabled: true
   brand_enabled: false
+  brand_tta: false
+  brand_min_conf: 0.25
   plate_enabled: true
   plate_engine: "tesseract"
   plate_vote_frames: 5

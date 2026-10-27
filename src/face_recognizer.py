@@ -19,7 +19,11 @@ from src.config import Config
 
 log = logging.getLogger(__name__)
 
-EMBEDDINGS_FILE = "data/db/embeddings.json"
+# У разных моделей InsightFace (buffalo_s / buffalo_l) — РАЗНЫЕ пространства
+# эмбеддингов. Поэтому база хранится отдельно для каждой модели: иначе лица,
+# зарегистрированные на ПК (buffalo_l), «не узнаются» на VPS (buffalo_s).
+EMBEDDINGS_FILE = "data/db/embeddings.json"  # старый общий файл (только buffalo_s)
+EMBEDDINGS_DIR = "data/db"
 
 
 @dataclass
@@ -68,19 +72,32 @@ class FaceRecognizer:
 
     # ---------- база ----------
     def _embedding_path(self) -> Path:
-        p = self.cfg.database.resolve(EMBEDDINGS_FILE)
+        model = str(self.cfg.face.model_name)
+        p = self.cfg.database.resolve(f"{EMBEDDINGS_DIR}/embeddings_{model}.json")
         p.parent.mkdir(parents=True, exist_ok=True)
         return p
 
     def _load_embeddings(self) -> None:
+        model = str(self.cfg.face.model_name)
         path = self._embedding_path()
         if not path.exists():
-            log.warning("База эмбеддингов не найдена: %s. Запусти scripts/register_faces.py", path)
-            return
+            legacy = self.cfg.database.resolve(EMBEDDINGS_FILE)
+            # Старый файл создавался конфигом по умолчанию (buffalo_s).
+            # Для других моделей он несовместим — лучше перерегистрировать лица.
+            if model == "buffalo_s" and legacy.exists():
+                log.warning("Использую старую базу лиц %s (модель buffalo_s). "
+                            "При следующей регистрации она переедет в %s", legacy, path)
+                path = legacy
+            else:
+                log.warning("База эмбеддингов для модели '%s' не найдена: %s. "
+                            "Запусти регистрацию с тем же конфигом: "
+                            "python main.py --config <ваш config> --register",
+                            model, path)
+                return
         with open(path, "r", encoding="utf-8") as f:
             raw = json.load(f)
         self.embeddings = {k: np.asarray(v, dtype=np.float32) for k, v in raw.items()}
-        log.info("База лиц загружена: %s", list(self.embeddings.keys()))
+        log.info("База лиц (%s) загружена: %s", model, list(self.embeddings.keys()))
 
     def register(self, name: str, embedding: np.ndarray) -> None:
         self.embeddings[name] = np.asarray(embedding, dtype=np.float32).reshape(-1)

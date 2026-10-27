@@ -48,13 +48,16 @@ python main.py --cameras 0                                # только пер�
 | `organize_folders.py` | переименовать папки на настоящие имена + подписи «кто есть кто» |
 | `collect_faces.py` | вырезать лица из фото в `data/datasets/raw/<имя>/` |
 | `register_faces.py` | запомнить лица (эмбеддинги) — после этого камера узнаёт людей |
-| `download_models.py` | скачать/проверить модели (YOLO, InsightFace) |
+| `download_models.py` | скачать/проверить модели (YOLO, InsightFace, марка авто, OCR) |
+| `download_car_brand_model.py` | скачать готовую модель марки (49 марок) и собрать ONNX |
+| `install_alpr.py` | поставить FastALPR (детектор + OCR номеров) и починить OpenCV GUI |
 | `make_test_video.py` | сгенерить тестовое видео без камеры |
+| `make_readme_assets.py` | пересобрать анимации и схемы для README (`docs/assets/`) |
 | `self_check.py` | ПОЛНАЯ самопроверка всех модулей (что всё работает) |
 | `show_events.py` | вывести последние события из базы |
 | `make_release_zip.py` | упаковать проект в zip для загрузки на VPS |
 | `deploy_server.sh` | развернуть проект на сервере одной командой |
-| `train_brand_classifier.py` | (опция) обучить распознавание марок машин |
+| `train_brand_classifier.py` | (опция) обучить свою модель марок на своих фото |
 
 ## 4. Всё одним махом на ПК (по шагам)
 
@@ -62,7 +65,7 @@ python main.py --cameras 0                                # только пер�
 # 1) зависимости (один раз)
 python -m venv .venv && .venv\Scripts\activate
 pip install -r requirements.txt
-pip install -r requirements-pc.txt        # easyocr + (опц.) DirectML
+pip install -r requirements-pc.txt        # easyocr (резерв) + (опц.) DirectML
 
 # 2) папки и люди
 python scripts/make_dirs.py
@@ -74,8 +77,9 @@ python scripts/collect_faces.py
 python scripts/register_faces.py
 
 # 4) настройка: config/config.pc.yaml  (IP камер, токен, chat_ids, ntfy topic)
-# 5) проверки:
-python scripts/download_models.py
+# 5) модели и проверки:
+python scripts/download_models.py --config config/config.pc.yaml
+python scripts/install_alpr.py             # нейросетевые номера
 python main.py --self-test
 python scripts/self_check.py
 
@@ -87,8 +91,10 @@ start_pc.bat        # или: python main.py
 
 | Идея | Как включить | Где смотреть результат |
 |---|---|---|
-| Точные номера через easyocr | в конфиге `plate_engine: "easyocr"` + `pip install -r requirements-pc.txt` | уведомления с номером |
-| Марки машин (Toyota, BMW...) | `python scripts/train_brand_classifier.py` (нужны фото марок) | в уведомлениях: «Марка: Toyota» |
+| Точные номера через FastALPR (нейросеть) | `python scripts/install_alpr.py`, в конфиге `plate_engine: "fastalpr"` | уведомления с номером |
+| Запасной OCR: easyocr | в конфиге `plate_engine: "easyocr"` + `pip install -r requirements-pc.txt` | уведомления с номером |
+| Марки машин (Toyota, BMW...) | `python scripts/download_car_brand_model.py`, `brand_enabled: true` | в уведомлениях: «Марка: Toyota» |
+| Свои марки, которых нет в модели | `python scripts/train_brand_classifier.py` на своих фото | «Марка: ...» |
 | Клипы вокруг событий вместо сплошной записи | `recording.mode: "events"` | `data/videos/<камера>/` |
 | Дольше хранить видео | поднять `recording.rotate_seconds` | — |
 | Следить за незнакомцами | `face.notify_unknown: true` (уже стоит) | «Незнакомец у камеры» + фото |
