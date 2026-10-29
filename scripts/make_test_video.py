@@ -2,7 +2,7 @@
 
 Запуск: python scripts/make_test_video.py
 Создаст data/test_video.mp4, затем:
-  python -m src.main --config config/config.local.yaml --once
+  python -m src.main --config config/config.yaml --once
 """
 from __future__ import annotations
 

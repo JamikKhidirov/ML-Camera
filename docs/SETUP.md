@@ -34,7 +34,9 @@ pip install -r requirements.txt
   ```bash
   python scripts/install_alpr.py
   ```
-  В `config/config.pc.yaml` уже стоит `plate_engine: "fastalpr"`.
+  После установки поставь в `config/config.yaml` (или в панели → Настройки)
+  `plate_engine: "fastalpr"`. По умолчанию там `tesseract` — он работает
+  без дополнительных моделей.
 - **tesseract (лёгкий, для слабого VPS)** — нужен tesseract в системе:
 
   - **Windows**: скачай установщик https://github.com/UB-Mannheim/tesseract/wiki
@@ -51,11 +53,58 @@ pip install -r requirements.txt
 
 > Полный список моделей, их размеры, лицензии и ограничения: `docs/MODELS.md`.
 
+### Животные и оставленные вещи
+
+Отдельно ставить ничего не нужно — используются классы готовой YOLO.
+В `config/config.yaml` уже включено:
+
+```yaml
+objects:
+  animals:
+    enabled: true
+    classes: ["dog", "cat", "bird"]
+  packages:
+    enabled: true
+    classes: ["backpack", "suitcase", "handbag"]
+    stationary_seconds: 45
+```
+
+Подробно: [`OBJECTS.md`](OBJECTS.md).
+
+### Своя модель марок для РФ
+
+Готовая модель знает только 49 марок США. Если нужны Lada, Kia, Haval и
+другие — обучите свою на фото с камеры:
+
+```bash
+pip install torch torchvision
+python scripts/collect_car_images.py
+# разложить по data/datasets/cars/train/<Марка>/
+python scripts/train_brand_classifier.py --dry-run
+python scripts/train_brand_classifier.py --epochs 15
+```
+
+Подробно: [`BRAND_RU.md`](BRAND_RU.md).
+
 ---
 
 ## 2. Подключение камер
 
-Все камеры прописываются в `config/config.yaml` в списке `cameras`:
+**Сначала проверь без камеры:** в `config/config.yaml` по умолчанию уже
+включена веб-камера ноутбука:
+
+```yaml
+cameras:
+  - name: "Ноутбук (веб-камера)"
+    source: 0
+    enabled: true
+```
+
+Запусти `python -m src.main` — в панели появится живой поток и «чертёж лица».
+Если IP-камера не открылась, программа сама переключится на веб-камеру
+(`camera.fallback_webcam: true`).
+
+Своя IP-камера добавляется в тот же список `cameras`:
 
 ```yaml
 cameras:
@@ -66,6 +115,8 @@ cameras:
     source: "rtsp://ЛОГИН:ПАРОЛЬ@IP_КАМЕРЫ:554/stream1"
     enabled: true
 ```
+
+Веб-камере при этом поставь `enabled: false`, чтобы не занимать устройство.
 
 Как узнать RTSP-адрес своей камеры:
 
@@ -153,14 +204,14 @@ python scripts/register_faces.py     # считает эмбеддинги
 ## 6. Запуск
 
 ```bash
-# Универсальный конфиг (config/config.yaml)
+# Один конфиг (config/config.yaml): веб-камера + панель + браузер
 python -m src.main
 
-# Мощная ПК-версия (Ryzen + RX 5700 XT): превью, клипы, большие модели
-python -m src.main --config config/config.pc.yaml
+# С превью и записью
+python -m src.main --preview --recording
 
-# Лёгкая серверная версия (VPS 300 ₽)
-python -m src.main --config config/config.vps.yaml
+# Настройки в окне Tkinter
+python scripts/settings.py
 ```
 
 Полезные флаги:
@@ -171,22 +222,72 @@ python -m src.main --cameras 0 2       # только камеры 0 и 2
 python -m src.main --self-test         # проверить уведомления
 python -m src.main --preview           # живое окно с рамками (вкл. ui.preview_enabled)
 python -m src.main --recording         # записывать клипы событий (вкл. recording.enabled)
+python -m src.main --web               # поднять веб-панель вместе с камерой
+python -m src.main --no-web            # без панели
 python scripts/show_events.py          # что накопилось в БД
 ```
 
 Снимки событий — в `data/events/<имя камеры>/<дата>/`, клипы — в
 `data/events/<имя камеры>/clips/`, события — в `data/db/ml_camera.db`.
 
-## 6.1. Версия для ПК (Windows 11, Ryzen, видеокарта)
+### 6.1. Веб-панель истории и управления
 
-ПК-конфиг `config/config.pc.yaml` включает:
-- **живое окно предпросмотра** с рамками детекции (`--preview`);
-- **запись видеоклипов** вокруг каждого события (лицо/машина/незнакомец);
-- **детекцию движения** — анализ только когда что-то шевелится;
-- **точные модели**: `yolov8m`, InsightFace `buffalo_l`, `easyocr` для номеров;
+В `config/config.yaml` панель стартует вместе с камерой:
+
+**http://127.0.0.1:8088**
+
+Вкладки: **«Камеры»** (live-поток, рамки, «чертёж лица», статус, fps,
+старт/стоп, снимок), **«История»** (события, фильтры, график) и
+**«Система»** (версия, БД, диск, возможности, таблица камер).
+
+Отдельно (только просмотр, без кнопок управления):
+
+```bash
+python scripts/web_panel.py --config config/config.yaml --open
+```
+
+> Кнопки камер работают только когда панель запущена вместе с камерой:
+> `python main.py --web` или `web.autostart: true`. Отдельный процесс
+> читает статусы из `data/db/camera_status.json` и не может управлять
+> потоком.
+
+Оверлей настраивается в `web`:
+
+```yaml
+web:
+  overlay: true       # рамки объектов
+  face_mesh: true     # 106 точек лица InsightFace
+```
+
+Для доступа с телефона в конфиге:
+
+```yaml
+web:
+  host: "0.0.0.0"
+  token: "длинный-пароль"
+  control: true          # кнопки камер
+```
+
+и открыть `http://IP-КОМПЬЮТЕРА:8088/?token=длинный-пароль`.
+Без токена и HTTPS не выставляйте панель в интернет. Полное руководство:
+[`WEB.md`](WEB.md).
+
+## 6.2. Если у тебя мощный ПК
+
+Единый `config/config.yaml` уже работает и на ноутбуке, и на ПК. На мощной
+машине можно поднять качество — в веб-панели («🛠 Настройки») или в файле:
+
+- **плавность**: `camera.fps: 30`, `web.stream_fps: 15`;
+- **точность ИИ**: `analysis.detect_every_n_frames: 2`;
+- **большие модели**: `models.yolov8: "data/models/yolov8m.pt"`,
+  `face.model_name: "buffalo_l"` (скачай модель заново
+  `python scripts/download_models.py`);
+- **запись**: `recording.enabled: true` (клипы вокруг событий);
+- **животные и оставленные вещи**: `objects.enabled: true`;
+- **веб-панель истории и управления** на http://127.0.0.1:8088;
 - **авто-обучение** незнакомцев (`data/datasets/auto_unknown/`).
 
-Установка доп. пакетов для ПК-версии:
+Установка доп. пакетов для ПК:
 
 ```bash
 pip install -r requirements-pc.txt
@@ -208,5 +309,10 @@ pip install -r requirements-pc.txt
 | Номер не читается | проверь tesseract (`scripts/download_models.py`); поставь камеру под лучший угол; уменьши `detect_every_n_frames` |
 | Много повторов уведомлений | подними `cooldown_minutes` |
 | Всё тормозит на VPS | подними `detect_every_n_frames` до 10, `frame_scale` до 0.5; отключи `brand_enabled` |
+| Не приходят уведомления о животных | проверь `objects.animals.enabled` и `conf_threshold` |
+| Вещь не считается оставленной | подними `objects.packages.stationary_seconds` или проверь, не двигается ли камера |
+| Веб-панель не открывается | включи `web.enabled`, проверь порт 8088 и `host` |
+| Кнопки камер серые | панель запущена отдельно — нужен `python main.py --web` |
+| Веб-панель просит токен | открой `?token=...` из `web.token` или задай пустой токен для localhost |
 
 Полная карта настройки есть в `config/config.yaml` — там всё прокомментировано.

@@ -1,13 +1,17 @@
 # =====================================================================
-#  MLCamera — УНИВЕРСАЛЬНЫЙ конфиг (по умолчанию).
+#  MLCamera — ЕДИНСТВЕННЫЙ конфиг. Больше файлов настроек нет.
 #
-#  Есть две готовые версии:
-#    config/config.pc.yaml  — мощный ПК (Ryzen + видеокарта AMD/Intel, превью,
-#                             запись клипов, детекция движения, большие модели)
-#    config/config.vps.yaml — лёгкий сервер (VPS 300 ₽, tesseract, малые модели)
+#  Запуск:  python main.py            (камера + веб-панель)
+#           python main.py --once     (один проход/проверка)
+#           settings.bat              (настройки в окне Tkinter)
 #
-#  Запуск нужной версии:  python -m src.main --config config/config.pc.yaml
-#  Что куда закидывать (фотки семьи): см. docs/DATASET.md
+#  Всё можно менять прямо в веб-панели: http://127.0.0.1:8088
+#  вкладка «🛠 Настройки» — поля запишутся в этот же файл.
+#
+#  По умолчанию берётся веб-камера ноутбука (source: 0).
+#  Своя IP-камера: добавь блок в cameras: и поставь ему enabled: true,
+#  а веб-камере — enabled: false. Если камера не откроется, программа
+#  сама переключится на веб-камеру (camera.fallback_webcam).
 # =====================================================================
 
 people:
@@ -24,21 +28,25 @@ people:
   # положи фото, добавь строку выше, запусти collect_faces.py + register_faces.py
 
 cameras:
-  # RTSP: rtsp://ЛОГИН:ПАРОЛЬ@IP_КАМЕРЫ:554/stream1
-  # Тест без камеры: source: "data/test_video.mp4"  (положи файл) или 0 (вебка)
-  - name: "Камера-1 (двор)"
-    source: "rtsp://admin:password@192.168.1.100:554/stream1"
+  # 0 — веб-камера ноутбука. Живой поток и «чертёж лица» сразу в панели.
+  - name: "Ноутбук (веб-камера)"
+    source: 0
     enabled: true
-  - name: "Камера-2 (ворота)"
-    source: "rtsp://admin:password@192.168.1.101:554/stream1"
-    enabled: false
-  - name: "Камера-3 (задний двор)"
-    source: "rtsp://admin:password@192.168.1.102:554/stream1"
-    enabled: false
+  # Своя IP-камера (пример):
+  # - name: "Двор"
+  #   source: "rtsp://admin:password@192.168.1.100:554/stream1"
+  #   enabled: true
+  # Тест без камеры: source: "data/test_video.mp4"
 
 camera:
   width: 1280
   height: 720
+  # FPS камеры: сколько кадров в секунду запрашивать.
+  #   30 — плавно; 15 — экономно; 0 — не ограничивать (камера отдаёт своё).
+  # Меняется в панели без правки файла.
+  fps: 30
+  # Если ни одна камера из списка не открылась — взять веб-камеру ноутбука.
+  fallback_webcam: true
   night_enabled: true
   night_brightness_threshold: 60
   # Усреднение НОЧНЫХ кадров: берём N кадров подряд и усредняем — меньше шума,
@@ -47,14 +55,16 @@ camera:
   frame_averaging_count: 3
 
 analysis:
-  # Анализируем каждый N-й кадр. На ПК можно 1-2, на VPS 5-10
-  detect_every_n_frames: 3
-  # Уменьшение кадра перед анализом (1.0 = без уменьшения, 0.5 = вдвое быстрее)
-  frame_scale: 0.75
+  # Анализируем каждый N-й кадр. На ПК можно 1-2, на VPS 5-10.
+  # 4 кадра при веб-камере — живой поток остаётся плавным.
+  detect_every_n_frames: 4
+  # Уменьшение кадра перед анализом (1.0 = без уменьшения, 0.5 = вдвое быстрее).
+  # 0.5 от 1280×720 = 640×360: YOLO и InsightFace всё равно работают в 640.
+  frame_scale: 0.5
   # МУЛЬТИРАЗРЕШЕНИЕ: есть движение — анализ полным кадром;
   # нет движения — периодический «прочёс» мелким кадром (экономия CPU)
   multi_resolution: true
-  small_frame_scale: 0.5
+  small_frame_scale: 0.4
   debug_delay: 0.0
 
 motion:
@@ -65,8 +75,10 @@ motion:
   threshold: 1500
   # Уменьшение кадра для сравнения (чем меньше, тем быстрее)
   scale: 0.25
-  # Раз в столько кадров анализ запускается ВСЁ РАВНО (страховка от пропуска)
-  force_interval_frames: 300
+  # Раз в столько кадров анализ запускается ВСЁ РАВНО (страховка от пропуска).
+  # 60 кадров ≈ 2 секунды: «чертёж лица» в панели не пропадает, даже если
+  # человек сидит неподвижно.
+  force_interval_frames: 60
 
 tracking:
   # Трекинг объектов между кадрами:
@@ -88,6 +100,32 @@ tracking:
   car_max_disappeared: 6
   car_max_distance: 120
 
+objects:
+  # Животные и оставленные вещи — на ГОТОВЫХ весах YOLO (классы COCO).
+  # Отдельную модель скачивать/обучать не нужно.
+  #   животные: dog, cat, bird
+  #   вещи:     backpack, suitcase, handbag (отдельного класса package нет)
+  enabled: true
+  max_disappeared: 20
+  max_distance: 100
+  animals:
+    enabled: true
+    classes: ["dog", "cat", "bird"]
+    conf_threshold: 0.35
+    min_frames: 2
+    cooldown_minutes: 30      # не чаще одного уведомления о собаке в 30 минут
+  packages:
+    enabled: true
+    classes: ["backpack", "suitcase", "handbag"]
+    conf_threshold: 0.40
+    min_frames: 3
+    # «Оставленная» = вещь почти не двигалась столько секунд.
+    # Порог движения = max(stationary_min_pixels, размер_вещи * stationary_move_ratio)
+    stationary_seconds: 45
+    stationary_move_ratio: 0.15
+    stationary_min_pixels: 8
+    cooldown_minutes: 120
+
 face:
   enabled: true
   # Провайдеры исполнения InsightFace по порядку:
@@ -100,6 +138,8 @@ face:
   detection_size: [640, 640]
   similarity_threshold: 0.45
   min_det_score: 0.4
+  # «Чертёж лица» обновляется и без движения — раз в N кадров обработки.
+  mesh_every_n_frames: 8
   cooldown_minutes: 30
   notify_unknown: true
   save_unknown: true
@@ -161,6 +201,26 @@ ui:
   # Живое окно предпросмотра с рамками (только когда на ПК есть дисплей)
   preview_enabled: false
   window_title: "MLCamera — {cam}"
+
+web:
+  # Локальная веб-панель: история, камеры, live-поток и управление.
+  #   отдельно:  python scripts/web_panel.py --config config/config.yaml
+  #   с камерой: web.autostart: true  или  python main.py --web
+  # Для доступа с телефона: host: "0.0.0.0" и обязательно token: "пароль".
+  enabled: true
+  autostart: true
+  # Открыть http://127.0.0.1:8088 в браузере сразу после запуска main.py
+  open_browser: true
+  host: "127.0.0.1"
+  port: 8088
+  title: "MLCamera — история событий"
+  token: ""
+  control: true            # кнопки старт/стоп/снимок (только при запуске с камерой)
+  overlay: true            # рамки объектов и «чертёж лица» на live-потоке
+  face_mesh: true          # 106 точек лица по модели InsightFace
+  # Live-поток в браузере: частота и качество JPEG (настраивается в панели).
+  stream_fps: 10           # кадров в секунду в MJPEG-потоке (1–30)
+  stream_quality: 70       # качество JPEG, % (30–95)
 
 notify:
   min_interval_seconds: 30

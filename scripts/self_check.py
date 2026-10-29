@@ -62,18 +62,17 @@ def main() -> int:
     except Exception as exc:
         bad(f"onnxruntime: {exc}")
 
-    # ---------- 2. конфиги ----------
-    section("2. Конфиги")
+    # ---------- 2. конфиг ----------
+    section("2. Конфиг")
     from src.config import Config, load_config
-    for c in ["config/config.yaml", "config/config.pc.yaml", "config/config.vps.yaml",
-              "config/config.vps.example.yaml", "config/config.local.yaml"]:
+    for c in ["config/config.yaml"]:
         try:
             cfg = load_config(c)
             n_cam = len(cfg.cameras) if isinstance(cfg.cameras, list) else 0
             ok(f"{c}: камер={n_cam}, имена={list(cfg.people.get('names', {}).keys())}")
         except Exception as exc:
             bad(f"{c}: {exc}")
-    cfg = load_config("config/config.local.yaml")
+    cfg = load_config("config/config.yaml")
 
     # ---------- 3. папки людей ----------
     section("3. Папки людей (датасет)")
@@ -168,6 +167,51 @@ def main() -> int:
     db_dig.close()
     (ROOT / "data/db/selfcheck_dig.db").unlink(missing_ok=True)
 
+    # ---------- 7d. животные и оставленные вещи ----------
+    section("7d. Животные и оставленные вещи (БД + веб-API)")
+    from src.database import Database as DB3
+    obj_cfg = Config({
+        "database": {"path": "data/db/selfcheck_obj.db"},
+        "storage": {"events_dir": "data/events"},
+        "web": {"host": "127.0.0.1", "port": 0, "token": ""},
+    })
+    db_obj = DB3(obj_cfg)
+    db_obj.save_object_event("cam1", "animal", "dog", "Собака", 0.88, 0, "dog.jpg")
+    db_obj.save_object_event("cam1", "package", "backpack", "Рюкзак", 0.9, 65, "bag.jpg")
+    objs, _ = db_obj.query_events(kind="object", hours=24)
+    (ok if len(objs) == 2 else bad)(
+        f"события животных/вещей: {len(objs)}" if len(objs) == 2
+        else f"ожидал 2 события, получил {len(objs)}")
+    st = db_obj.stats(hours=24)
+    (ok if st["animals"] == 1 and st["packages"] == 1 else bad)(
+        f"статистика: животные={st['animals']}, посылки={st['packages']}"
+        if st["animals"] == 1 and st["packages"] == 1 else f"статистика сломана: {st}")
+
+    # веб-панель реально поднимается и отвечает
+    try:
+        import json as _json
+        import threading as _threading
+        import urllib.request as _urlreq
+        from src.web_panel import create_server
+
+        web = create_server(obj_cfg, db=db_obj, host="127.0.0.1", port=0)
+        t_web = _threading.Thread(target=web.serve_forever, daemon=True)
+        t_web.start()
+        url = f"http://127.0.0.1:{web.server_address[1]}"
+        with _urlreq.urlopen(url + "/health", timeout=5) as resp:
+            alive = _json.loads(resp.read()).get("ok") is True
+        with _urlreq.urlopen(url + "/api/events?kind=animal", timeout=5) as resp:
+            ev = _json.loads(resp.read())["events"]
+        web.shutdown()
+        web.server_close()
+        (ok if alive and len(ev) == 1 else bad)(
+            f"веб-панель: /health + /api/events (событий: {len(ev)})"
+            if alive and len(ev) == 1 else "веб-панель отвечает неверно")
+    except Exception as exc:
+        bad(f"веб-панель: {exc}")
+    db_obj.close()
+    (ROOT / "data/db/selfcheck_obj.db").unlink(missing_ok=True)
+
     # ---------- 8. запись видео ----------
     section("8. Запись видео (data/videos)")
     from src.recorder import ClipRecorder
@@ -199,6 +243,11 @@ def main() -> int:
         t0 = time.time()
         res = det.predict(ok_frame)
         ok(f"YOLO отработала за {time.time()-t0:.1f} c, объектов: {len(res)}")
+        needed = {"dog", "cat", "bird", "backpack", "suitcase", "handbag"}
+        missing = sorted(needed - set(det.names.values()))
+        (ok if not missing else bad)(
+            "классы животных/вещей есть в YOLO" if not missing
+            else f"в YOLO нет классов: {missing}")
     except Exception as exc:
         bad(f"YOLO: {exc}")
 
@@ -219,7 +268,7 @@ def main() -> int:
     # ---------- 11. уведомления (без отправки) ----------
     section("11. Уведомления (настройка)")
     from src.notifier import Notifier
-    notif = Notifier(load_config("config/config.local.yaml"))
+    notif = Notifier(load_config("config/config.yaml"))
     tg = notif.tg_enabled
     push = notif.push_enabled
     ok(f"Telegram получателей: {len(notif.chat_ids)}" if not tg or notif.chat_ids else "")

@@ -29,7 +29,7 @@ log = logging.getLogger(__name__)
 def main() -> int:
     parser = argparse.ArgumentParser(description="Вырезать лица из сырых фото")
     parser.add_argument("--config", default=None,
-                        help="путь к config.yaml (напр. config/config.pc.yaml)")
+                        help="путь к config.yaml (напр. config/config.yaml)")
     args = parser.parse_args()
 
     cfg = load_config(args.config)

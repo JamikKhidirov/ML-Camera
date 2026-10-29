@@ -23,17 +23,17 @@ echo [2/5] Ставлю зависимости (долго, ~10 минут, од
 .venv\Scripts\python.exe -m pip install -r requirements-pc.txt
 
 echo [3/5] Проверяю/скачиваю модели ИИ (YOLO, лица, марки авто)...
-.venv\Scripts\python.exe scripts\download_models.py --config config\config.pc.yaml
+.venv\Scripts\python.exe scripts\download_models.py --config config\config.yaml
 
 echo [4/5] Ставлю нейросетевые номера (FastALPR: детектор + OCR)...
 .venv\Scripts\python.exe scripts\install_alpr.py
 
-echo [5/5] Создаю папки людей и запоминаю лица (ПК-конфиг)...
-.venv\Scripts\python.exe main.py --config config\config.pc.yaml --register
+echo [5/5] Создаю папки людей и запоминаю лица (единый config\config.yaml)...
+.venv\Scripts\python.exe main.py --config config\config.yaml --register
 
 echo.
 echo ГОТОВО! Дальше:
-echo   1) Открой  config\config.pc.yaml  и впиши токен бота, id, камеры  ^(см. docs\НАЧАЛО.md^)
+echo   1) Открой  config\config.yaml  и впиши токен бота, id, камеры  ^(см. docs\НАЧАЛО.md^)
 echo   2) Положи фото в data\datasets\raw\ИМЯ\
 echo   3) Запусти:  pc\run_pc.bat   (или python pc\main.py)
 echo   4) Хочешь .exe:  pc\build_exe.bat

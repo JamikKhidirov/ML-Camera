@@ -51,7 +51,7 @@ class FakeAnalyzer:
 @pytest.fixture
 def pipe(monkeypatch):
     monkeypatch.setattr("src.pipeline.Camera", FakeCamera)
-    cfg = load_config("config/config.local.yaml")
+    cfg = load_config("config/config.yaml")
     # номера в этом тесте не нужны, а «финализация по vote_frames» не должна
     # срабатывать раньше, чем машина исчезнет
     cfg.car._data["plate_enabled"] = False

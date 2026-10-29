@@ -13,13 +13,16 @@ log = logging.getLogger(__name__)
 class Camera:
     """Обёртка над cv2.VideoCapture с переподключением при обрыве потока."""
 
-    def __init__(self, source, width=1280, height=720, reconnect_delay: float = 5.0):
+    def __init__(self, source, width=1280, height=720, reconnect_delay: float = 5.0,
+                 fps: int = 0):
         self.source = source
         self.width = width
         self.height = height
         self.reconnect_delay = reconnect_delay
+        self.target_fps = int(fps or 0)
         self._cap: Optional[cv2.VideoCapture] = None
         self._last_error_at = 0.0
+        self._next_at = 0.0
         self.fps = 0.0
         self.open()
 
@@ -50,12 +53,29 @@ class Camera:
         if not (self._cap and self._cap.isOpened()):
             raise RuntimeError(f"Не удалось открыть источник {src}")
         if not self._is_file(self.source):
+            # Частоту просим ДО разрешения: некоторые веб-камеры подбирают
+            # режим по паре (разрешение, fps).
+            if self.target_fps > 0:
+                self._cap.set(cv2.CAP_PROP_FPS, float(self.target_fps))
             self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
             self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
         try:
-            self.fps = float(self._cap.get(cv2.CAP_PROP_FPS) or 0.0)
+            actual = float(self._cap.get(cv2.CAP_PROP_FPS) or 0.0)
         except Exception:
-            self.fps = 0.0
+            actual = 0.0
+        # Если камера не умеет сообщать fps — показываем запрошенную частоту.
+        self.fps = actual if actual > 0 else float(self.target_fps or 0)
+        self._next_at = 0.0
+
+    def set_fps(self, fps: int) -> None:
+        """Сменить желаемый FPS на лету (камера может применить после reopen)."""
+        self.target_fps = max(0, int(fps or 0))
+        if self._cap is not None and not self._is_file(self.source):
+            try:
+                if self.target_fps > 0:
+                    self._cap.set(cv2.CAP_PROP_FPS, float(self.target_fps))
+            except Exception:
+                log.debug("Не удалось сменить FPS камеры", exc_info=True)
 
     def _release(self) -> None:
         if self._cap is not None:
@@ -71,6 +91,16 @@ class Camera:
             return None
         ok, frame = self._cap.read()
         if ok:
+            # Ограничение частоты: если камера отдаёт 30 fps, а просили 10 —
+            # спим между кадрами, чтобы не жечь CPU на лишних кадрах.
+            if self.target_fps > 0 and not self._is_file(self.source):
+                now = time.perf_counter()
+                if self._next_at <= 0 or self._next_at < now - 1.0:
+                    self._next_at = now
+                self._next_at += 1.0 / self.target_fps
+                delay = self._next_at - now
+                if delay > 0:
+                    time.sleep(min(delay, 1.0))
             return frame
         # Источник отвалился / конец файла
         if self._is_file(self.source):

@@ -46,6 +46,6 @@ echo.
 echo    ПРОГРАММА:  pc\dist\MLCamera\MLCamera.exe
 echo    Фотки людей:  pc\dist\MLCamera\data\datasets\raw\ИМЯ\
 echo                 ^(положи туда 10-25 фото, потом запусти  MLCamera.exe --register^)
-echo    Настройки:    pc\dist\MLCamera\config\config.pc.yaml
+echo    Настройки:    pc\dist\MLCamera\config\config.yaml
 echo.
 pause

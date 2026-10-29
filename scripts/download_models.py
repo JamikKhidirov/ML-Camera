@@ -2,7 +2,7 @@
 
 Запуск:
   python scripts/download_models.py                                # config/config.yaml
-  python scripts/download_models.py --config config/config.pc.yaml # ПК-версия
+  python scripts/download_models.py --config config/config.yaml # ПК-версия
 
 Скачивает ровно те модели, которые указаны в выбранном конфиге:
   - YOLO (детекция людей и машин) — ultralytics качает сама при первом запуске;
@@ -27,7 +27,7 @@ from src.config import init_logging, load_config  # noqa: E402
 def main() -> int:
     parser = argparse.ArgumentParser(description="Проверить/скачать модели из конфига")
     parser.add_argument("--config", default=None,
-                        help="путь к config.yaml (напр. config/config.pc.yaml)")
+                        help="путь к config.yaml (напр. config/config.yaml)")
     parser.add_argument("--skip-brand", action="store_true",
                         help="не скачивать модель марки (111 МБ)")
     args = parser.parse_args()

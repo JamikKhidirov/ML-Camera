@@ -123,7 +123,8 @@ def make_banner() -> None:
     pill_font = load_font(22, bold=True)
     live_font = load_font(18, bold=True)
 
-    pills = [("Лица", GREEN), ("Машины", CYAN), ("Telegram", VIOLET), ("Ночь", AMBER)]
+    pills = [("Лица", GREEN), ("Машины", CYAN), ("Звери", AMBER),
+             ("Вещи", RED), ("Telegram", VIOLET)]
 
     for f in range(frames):
         t = f / frames
@@ -173,7 +174,7 @@ def make_banner() -> None:
         draw.text((354, 166), "Умная камера для семьи", font=sub_font, fill=MUTED)
 
         # плашки-возможности, подсвечиваются по кругу
-        active = int(t * 4) % len(pills)
+        active = int(t * len(pills)) % len(pills)
         x = 354
         for idx, (label, color) in enumerate(pills):
             tw = draw.textlength(label, font=pill_font)
@@ -240,6 +241,45 @@ def icon_plane(draw, box, color):
                   (x0 + int((x1 - x0) * 0.44), y1 - int((y1 - y0) * 0.1))], fill=color)
 
 
+def icon_paw(draw, box, color):
+    x0, y0, x1, y1 = box
+    w, h = x1 - x0, y1 - y0
+    draw.ellipse((x0 + int(w * 0.26), y0 + int(h * 0.42),
+                  x0 + int(w * 0.74), y0 + int(h * 0.88)), fill=color)
+    for cx, cy, r in ((0.22, 0.30, 0.12), (0.42, 0.18, 0.12),
+                      (0.62, 0.18, 0.12), (0.82, 0.30, 0.12)):
+        rr = int(w * r)
+        draw.ellipse((x0 + int(w * cx) - rr, y0 + int(h * cy) - rr,
+                      x0 + int(w * cx) + rr, y0 + int(h * cy) + rr), fill=color)
+
+
+def icon_box(draw, box, color):
+    x0, y0, x1, y1 = box
+    w, h = x1 - x0, y1 - y0
+    rounded(draw, (x0, y0 + int(h * 0.18), x1, y1), max(4, int(h * 0.08)),
+            fill=color)
+    draw.rectangle((x0 + int(w * 0.42), y0 + int(h * 0.18),
+                    x0 + int(w * 0.58), y1), fill=(20, 28, 50))
+    draw.line((x0, y0 + int(h * 0.30), x1, y0 + int(h * 0.30)),
+              fill=(20, 28, 50), width=max(2, int(h * 0.05)))
+
+
+def icon_web(draw, box, color):
+    x0, y0, x1, y1 = box
+    w, h = x1 - x0, y1 - y0
+    rounded(draw, (x0, y0 + int(h * 0.08), x1, y1 - int(h * 0.08)),
+            max(4, int(h * 0.10)), outline=color, width=3)
+    draw.line((x0, y0 + int(h * 0.30), x1, y0 + int(h * 0.30)), fill=color, width=2)
+    for i, cx in enumerate((0.14, 0.27, 0.40)):
+        r = max(2, int(w * 0.04))
+        draw.ellipse((x0 + int(w * cx) - r, y0 + int(h * 0.18) - r,
+                      x0 + int(w * cx) + r, y0 + int(h * 0.18) + r), fill=color)
+    draw.line((x0 + int(w * 0.22), y0 + int(h * 0.58),
+               x0 + int(w * 0.78), y0 + int(h * 0.58)), fill=color, width=2)
+    draw.line((x0 + int(w * 0.22), y0 + int(h * 0.72),
+               x0 + int(w * 0.62), y0 + int(h * 0.72)), fill=color, width=2)
+
+
 def icon_moon(draw, box, color):
     x0, y0, x1, y1 = box
     w, h = x1 - x0, y1 - y0
@@ -258,8 +298,8 @@ def icon_moon(draw, box, color):
 
 
 def make_features() -> None:
-    width, height = 900, 410
-    frames = 80
+    width, height = 900, 566
+    frames = 72
     images: list[Image.Image] = []
     title_font = load_font(34, bold=True)
     card_title = load_font(25, bold=True)
@@ -268,8 +308,10 @@ def make_features() -> None:
     items = [
         ("Люди по имени", "InsightFace узнаёт родных", icon_person, GREEN),
         ("Машины", "номер, цвет и марка", icon_car, CYAN),
+        ("Животные", "собака, кошка, птица", icon_paw, AMBER),
+        ("Оставленные вещи", "рюкзак, сумка, чемодан", icon_box, RED),
+        ("Веб-панель", "история, фильтры, фото", icon_web, CYAN),
         ("Telegram + ntfy", "мгновенные уведомления", icon_plane, VIOLET),
-        ("Ночное видение", "ИК + усиление кадра", icon_moon, AMBER),
     ]
 
     for f in range(frames):
@@ -279,8 +321,8 @@ def make_features() -> None:
 
         glow = glow_layer((width, height))
         gd = ImageDraw.Draw(glow)
-        gd.ellipse((60, 10, 420, 370), fill=(70, 230, 170, 24))
-        gd.ellipse((480, -60, 980, 420), fill=(140, 100, 255, 24))
+        gd.ellipse((60, 10, 420, 520), fill=(70, 230, 170, 24))
+        gd.ellipse((480, -60, 980, 570), fill=(140, 100, 255, 24))
         blurred_glow(img, glow, 70)
 
         draw = ImageDraw.Draw(img)
@@ -298,7 +340,7 @@ def make_features() -> None:
         active = int(t * len(items)) % len(items)
         gap, margin = 22, 40
         card_w = (width - 2 * margin - gap) // 2
-        card_h = 128
+        card_h = 124
 
         for idx, (title, sub, icon, color) in enumerate(items):
             row, col = divmod(idx, 2)
@@ -320,11 +362,11 @@ def make_features() -> None:
                     outline=color if is_active else (52, 66, 100), width=2)
 
             # иконка
-            icon_box = (x0 + 24, y0 + 34, x0 + 82, y0 + 94)
-            icon(draw, icon_box, color)
+            ibox = (x0 + 24, y0 + 32, x0 + 82, y0 + 92)
+            icon(draw, ibox, color)
 
-            draw.text((x0 + 100, y0 + 34), title, font=card_title, fill=TEXT)
-            draw.text((x0 + 100, y0 + 68), sub, font=card_sub, fill=MUTED)
+            draw.text((x0 + 100, y0 + 32), title, font=card_title, fill=TEXT)
+            draw.text((x0 + 100, y0 + 66), sub, font=card_sub, fill=MUTED)
 
             # индикатор активности
             if is_active:
@@ -344,13 +386,14 @@ def make_features() -> None:
         images.append(img.convert("RGB"))
 
     OUT.mkdir(parents=True, exist_ok=True)
-    save_gif(images, OUT / "features.gif", duration=75)
+    save_gif(images, OUT / "features.gif", duration=95, colors=96)
 
 
-def save_gif(images: list[Image.Image], path: Path, duration: int) -> None:
+def save_gif(images: list[Image.Image], path: Path, duration: int,
+             colors: int = 128) -> None:
     paletted = []
     for frame in images:
-        paletted.append(frame.quantize(colors=128, method=Image.Quantize.MEDIANCUT))
+        paletted.append(frame.quantize(colors=colors, method=Image.Quantize.MEDIANCUT))
     paletted[0].save(
         path,
         save_all=True,
@@ -419,6 +462,8 @@ def make_pipeline_svg() -> None:
     <text x="578" y="190" fill="#42e8a0" font-size="11" text-anchor="middle">car</text>
     <rect x="620" y="172" width="46" height="30" rx="4" fill="none" stroke="#ffc457" stroke-width="2"/>
     <text x="643" y="192" fill="#ffc457" font-size="11" text-anchor="middle">человек</text>
+    <text x="607" y="224" fill="#42e8a0" font-size="11" text-anchor="middle">+ dog · cat · bird</text>
+    <text x="607" y="241" fill="#ff5c6e" font-size="11" text-anchor="middle">+ backpack · suitcase</text>
     <text x="607" y="272" fill="#9aa9c3" font-size="15" text-anchor="middle">детекция объектов</text>
   </g>
 
@@ -446,7 +491,7 @@ def make_pipeline_svg() -> None:
   <g>
     <rect x="372" y="300" width="240" height="82" rx="14" fill="#1a2340" stroke="#42e8a0" stroke-width="2"/>
     <text x="492" y="332" fill="#eef4ff" font-size="15" font-weight="700" text-anchor="middle">SQLite + фото</text>
-    <text x="492" y="355" fill="#9aa9c3" font-size="13" text-anchor="middle">события и история</text>
+    <text x="492" y="355" fill="#9aa9c3" font-size="13" text-anchor="middle">события · история · веб-панель</text>
   </g>
   <path d="M612 341 H 700" stroke="#5b7099" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
   <g>
@@ -464,7 +509,7 @@ def make_pipeline_svg() -> None:
 
 def make_models_svg() -> None:
     cards = [
-        ("ДЕТЕКЦИЯ", "YOLOv8m / n", "люди · машины", "6–50 МБ", "AGPL-3.0", "#42e8a0", "Y"),
+        ("ДЕТЕКЦИЯ", "YOLOv8m / n", "люди · машины · звери", "6–50 МБ", "AGPL-3.0", "#42e8a0", "Y"),
         ("ЛИЦА", "InsightFace", "детекция + эмбеддинги", "158 МБ", "MIT / research", "#966eff", "F"),
         ("МАРКА", "ConvNeXt-Tiny", "49 марок", "106 МБ", "Apache-2.0", "#40d6ff", "B"),
         ("НОМЕР", "YOLOv9-t", "поиск пластины", "7.4 МБ", "MIT", "#ffc457", "D"),
@@ -507,7 +552,7 @@ def make_models_svg() -> None:
   </g>
   <text x="500" y="42" fill="#eef4ff" font-size="24" font-weight="700" text-anchor="middle">Нейросети внутри MLCamera</text>
   <rect x="400" y="54" width="200" height="3" rx="1.5" fill="url(#accent)"/>
-  <text x="500" y="78" fill="#9aa9c3" font-size="13" text-anchor="middle">5 готовых моделей · ничего не нужно обучать вручную</text>
+  <text x="500" y="78" fill="#9aa9c3" font-size="13" text-anchor="middle">5 готовых моделей · животные и вещи — на той же YOLO</text>
 {''.join(parts)}
   <text x="500" y="392" fill="#5b7099" font-size="12" text-anchor="middle">YOLO · InsightFace · ConvNeXt · FastALPR · всё локально на CPU</text>
 </svg>

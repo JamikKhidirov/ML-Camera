@@ -58,7 +58,7 @@ data/datasets/raw/НовоеИмя/, кинь фото и запусти --regis
  ГДЕ НАСТРОЙКИ (токен бота, id, камеры)?
 ---------------------------------------------------------
 
-Всё настройки в файле:  config/config.pc.yaml
+Все настройки в файле:  config/config.yaml
 Открой его блокнотом и замени:
   - notify.telegram.bot_token  -> токен твоего бота (у @BotFather)
   - notify.telegram.chat_ids   -> id аккаунтов, кому писать (у @userinfobot)

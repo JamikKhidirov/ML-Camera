@@ -1,7 +1,13 @@
 """Детекция объектов через YOLOv8 (Ultralytics).
 
-Находит людей и автомобили в кадре. Классы YOLO (по умолчанию):
+Находит людей, автомобили, животных и вещи в кадре. Классы COCO (по умолчанию):
   0 person | 2 car | 3 motorcycle | 5 bus | 7 truck
+  14 bird | 15 cat | 16 dog
+  24 backpack | 26 handbag | 28 suitcase
+
+Животные и оставленные вещи используют те же веса YOLO — отдельная модель
+не нужна. Посылка определяется как стационарный backpack/suitcase/handbag
+в src/pipeline.py.
 """
 from __future__ import annotations
 
@@ -79,3 +85,9 @@ class YoloDetector:
                          conf_threshold: float | None = None) -> list[Detection]:
         allowed = allowed or self.cfg.car.detect_classes
         return [d for d in self.predict(frame, conf_threshold) if d.label in allowed]
+
+    def predict_objects(self, frame, classes: list[str] | None = None,
+                        conf_threshold: float | None = None) -> list[Detection]:
+        """Животные/вещи по готовым COCO-классам YOLO (без отдельной модели)."""
+        return [d for d in self.predict(frame, conf_threshold)
+                if classes is None or d.label in classes]

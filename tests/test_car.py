@@ -33,7 +33,7 @@ def test_ready_brand_model_loads_if_present():
     """Готовая модель марки (если скачана) грузится и даёт валидный класс."""
     from src.config import load_config
 
-    cfg = load_config("config/config.local.yaml")
+    cfg = load_config("config/config.yaml")
     analyzer = CarAnalyzer(cfg)
     if analyzer._ort_session is None:
         pytest.skip("модель марки не скачана (scripts/download_car_brand_model.py)")

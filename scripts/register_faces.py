@@ -3,7 +3,7 @@
 Берёт вырезанные лица из data/datasets/faces/<имя>/ и сохраняет
 в data/db/embeddings_<модель>.json. Запуск:
   python scripts/register_faces.py
-  python scripts/register_faces.py --config config/config.pc.yaml
+  python scripts/register_faces.py --config config/config.yaml
 """
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ log = logging.getLogger(__name__)
 def main() -> int:
     parser = argparse.ArgumentParser(description="Запомнить лица в базе")
     parser.add_argument("--config", default=None,
-                        help="путь к config.yaml (напр. config/config.pc.yaml)")
+                        help="путь к config.yaml (напр. config/config.yaml)")
     args = parser.parse_args()
 
     cfg = load_config(args.config)

@@ -23,8 +23,11 @@ CONFIG_PATH = PROJECT_ROOT / "config" / "config.yaml"
 class Config:
     """Тонкая обёртка над словарём YAML с доступом вида cfg.face.similarity_threshold."""
 
-    def __init__(self, data: dict[str, Any]):
+    def __init__(self, data: dict[str, Any], path: str | Path | None = None):
         self._data = data
+        # Откуда прочитан конфиг: по этому пути веб-панель и Tkinter сохраняют
+        # изменения. Для тестов можно передать временный путь.
+        self._path = Path(path).resolve() if path else CONFIG_PATH
 
     def __getattr__(self, item: str) -> Any:
         if item in self._data:
@@ -45,6 +48,11 @@ class Config:
     def __repr__(self) -> str:
         return f"Config({self._data.keys()})"
 
+    @property
+    def config_path(self) -> Path:
+        """Путь к YAML-файлу, из которого загружен конфиг."""
+        return self._path
+
 
 def load_config(path: str | Path | None = None) -> Config:
     cfg_path = Path(path) if path else CONFIG_PATH
@@ -56,7 +64,7 @@ def load_config(path: str | Path | None = None) -> Config:
         raise FileNotFoundError(f"Конфиг не найден: {cfg_path}")
     with open(cfg_path, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
-    return Config(data)
+    return Config(data, path=cfg_path)
 
 
 def init_logging(level: str = "INFO", logfile: str | None = None) -> None:

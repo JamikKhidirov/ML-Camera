@@ -106,7 +106,7 @@ ffprobe -rtsp_transport tcp rtsp://ЛОГИН:ПАРОЛЬ@10.0.0.100:554/stream
 # 3) если ffprobe показал метаданные видео — доступ работает
 ```
 
-Дальше этот же URL пишется в `config/config.vps.yaml` → `cameras[].source`.
+Дальше этот же URL пишется в `config/config.yaml` → `cameras[].source`.
 
 ---
 
@@ -118,7 +118,7 @@ ffprobe -rtsp_transport tcp rtsp://ЛОГИН:ПАРОЛЬ@10.0.0.100:554/stream
    - `SERVER_IP` — IP сервера (`185.23.45.67`);
    - `SERVER_USER` — `root`;
    - `SERVER_PASSWORD` — пароль от сервера;
-   - `CONFIG_YAML` — **весь текст** `config/config.vps.yaml` (Ctrl+A, Ctrl+C, вставить),
+   - `CONFIG_YAML` — **весь текст** `config/config.yaml` (Ctrl+A, Ctrl+C, вставить),
      где уже прописаны: доступный URL камеры, токен, chat_ids, ntfy topic.
 3. `git push` в `main` → GitHub сам: тесты → сборка Docker-образа → по SSH
    ставит Docker → кладёт твой `CONFIG_YAML` → запускает контейнер.
@@ -143,8 +143,8 @@ cd ~/ml_camera && docker compose -f docker-compose.prod.yml up -d --build
 ```bash
 apt install -y python3.10-venv tesseract-ocr tesseract-ocr-rus libgl1 libglib2.0-0
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-nano config/config.vps.yaml          # свои значения
-.venv/bin/python main.py --config config/config.vps.yaml
+nano config/config.yaml          # свои значения
+.venv/bin/python main.py --config config/config.yaml
 ```
 > Для запуска 24/7 добавь systemd-юнит или `nohup`; проще всё же Docker.
 
@@ -163,7 +163,7 @@ docker exec ml_camera python scripts/show_events.py   # последние со�
 
 - [ ] Сервер: Ubuntu 22.04, 1-2 vCPU / 1-2 ГБ / 10 ГБ (для 3+ камер — 4 vCPU / 4 ГБ).
 - [ ] VPS умеет достучаться до камеры: WireGuard ИЛИ проброс порта (проверено `nc`/`ffprobe`).
-- [ ] В `config/config.vps.yaml`:
+- [ ] В `config/config.yaml`:
   - `cameras[].source` = доступный RTSP-URL;
   - `people.names` = имена = папки в `data/datasets/raw/`;
   - `notify.telegram.bot_token` + `chat_ids` (кому слать «кто пришёл»);

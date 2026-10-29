@@ -25,7 +25,7 @@ sys.path.insert(0, str(ROOT))
 
 PC_DIR = ROOT / "pc"
 ICON = PC_DIR / "MLCamera.ico"
-PC_CONFIG = ROOT / "config/config.pc.yaml"
+PC_CONFIG = ROOT / "config/config.yaml"
 
 
 def run(extra_args: list[str] | None = None) -> int:
@@ -77,7 +77,7 @@ def build() -> int:
     print("ГОТОВО! Программа: ", exe_dir / "MLCamera.exe")
     print("Создай ярлык на рабочий стол и запускай двойным кликом.")
     print("Фото людей:    ", exe_dir / "data/datasets/raw/ИМЯ/")
-    print("Настройки:     ", exe_dir / "config/config.pc.yaml")
+    print("Настройки:     ", exe_dir / "config/config.yaml")
     return 0
 
 

@@ -5,7 +5,10 @@
   - усреднение ночных кадров (меньше шума — номер читается в темноте);
   - трекинг людей: один проход/стояние = ОДНО уведомление (+ «вошёл/вышел»);
   - трекинг машин: номер собирается с нескольких кадров «голосованием»;
-  - свои/чужие номера (car.known_plates).
+  - свои/чужие номера (car.known_plates);
+  - животные (dog/cat/bird) и оставленные вещи (backpack/suitcase/handbag)
+    на тех же весах YOLO: вещь считается оставленной, если трек долго стоит
+    на месте (objects.* в конфиге).
 
 Если трекинг выключен (tracking.enabled: false) — работает старый путь
 (каждое появление с кулдауном по имени/номеру).
@@ -13,6 +16,8 @@
 from __future__ import annotations
 
 import logging
+import math
+import threading
 import time
 from collections import Counter
 from datetime import datetime
@@ -37,6 +42,20 @@ from src.tracker import CentroidTracker, majority_vote
 
 log = logging.getLogger(__name__)
 
+# Русские подписи для COCO-классов. Список можно расширить в конфиге.
+ANIMAL_NAMES = {
+    "dog": "Собака", "cat": "Кошка", "bird": "Птица", "horse": "Лошадь",
+    "sheep": "Овца", "cow": "Корова", "elephant": "Слон", "bear": "Медведь",
+    "zebra": "Зебра", "giraffe": "Жираф",
+}
+PACKAGE_NAMES = {
+    "backpack": "Рюкзак", "suitcase": "Чемодан", "handbag": "Сумка",
+}
+PACKAGE_ALERTS = {
+    "backpack": "Оставлен рюкзак", "suitcase": "Оставлен чемодан",
+    "handbag": "Оставлена сумка",
+}
+
 
 class Pipeline:
     def __init__(self, cfg: Config, camera_cfg, db: Database, notifier: Notifier):
@@ -50,6 +69,7 @@ class Pipeline:
             camera_cfg["source"],
             width=int(cfg.camera.width),
             height=int(cfg.camera.height),
+            fps=int(cfg.camera.get("fps", 0) or 0),
         )
         self.detector: Optional[YoloDetector] = None
         self.face_recognizer: Optional[FaceRecognizer] = None
@@ -79,10 +99,180 @@ class Pipeline:
             for p in (self.cfg.car.get("known_plates") or [])
         }
 
+        # ---------- животные и оставленные вещи ----------
+        objects = cfg.get("objects", None)
+        self.objects_cfg = objects if isinstance(objects, dict) else {}
+        self.animals_cfg = self.objects_cfg.get("animals") or {}
+        self.packages_cfg = self.objects_cfg.get("packages") or {}
+        self.objects_enabled = bool(self.objects_cfg.get("enabled", False))
+        self.animals_enabled = (self.objects_enabled
+                                and bool(self.animals_cfg.get("enabled", True)))
+        self.packages_enabled = (self.objects_enabled
+                                 and bool(self.packages_cfg.get("enabled", True)))
+        self.animal_classes = [str(x) for x in
+                               (self.animals_cfg.get("classes") or ["dog", "cat", "bird"])]
+        self.package_classes = [str(x) for x in
+                                (self.packages_cfg.get("classes")
+                                 or ["backpack", "suitcase", "handbag"])]
+        self.animal_conf = float(self.animals_cfg.get("conf_threshold", 0.35))
+        self.package_conf = float(self.packages_cfg.get("conf_threshold", 0.40))
+        self.animal_cooldown = float(self.animals_cfg.get("cooldown_minutes", 30))
+        self.package_cooldown = float(self.packages_cfg.get("cooldown_minutes", 120))
+        self.animal_min_frames = int(self.animals_cfg.get(
+            "min_frames", self.cfg.tracking.get("min_frames_to_notify", 3)))
+        self.package_min_frames = int(self.packages_cfg.get(
+            "min_frames", self.cfg.tracking.get("min_frames_to_notify", 3)))
+        # Через сколько секунд неподвижности вещь считаем оставленной.
+        self.stationary_seconds = float(self.packages_cfg.get("stationary_seconds", 45))
+        self.stationary_move_ratio = float(
+            self.packages_cfg.get("stationary_move_ratio", 0.15))
+        self.stationary_min_pixels = float(
+            self.packages_cfg.get("stationary_min_pixels", 8))
+        self.animal_tracker = CentroidTracker(
+            max_disappeared=int(self.animals_cfg.get(
+                "max_disappeared", self.objects_cfg.get("max_disappeared", 20))),
+            max_distance=float(self.animals_cfg.get(
+                "max_distance", self.objects_cfg.get("max_distance", 100)),
+        )) if self.animals_enabled else None
+        self.package_tracker = CentroidTracker(
+            max_disappeared=int(self.packages_cfg.get(
+                "max_disappeared", self.objects_cfg.get("max_disappeared", 30))),
+            max_distance=float(self.packages_cfg.get(
+                "max_distance", self.objects_cfg.get("max_distance", 120)),
+        )) if self.packages_enabled else None
+
         self._events_dir = cfg.storage.resolve(cfg.storage.events_dir)
         self._frame_count = 0
         self._auto_capture_dir = cfg.resolve(cfg.face.get("auto_capture_dir",
                                                            "data/datasets/auto_unknown"))
+        # Управление из веб-панели: мягкая остановка и последний кадр для снимка.
+        self._stop = threading.Event()
+        self._frame_lock = threading.Lock()
+        self._last_frame = None
+        self._last_frame_ts = 0.0
+        self._last_frame_size = (0, 0)
+        # Оверлей для панели: рамки объектов + «чертёж лица» по 106 точкам.
+        web_cfg = cfg.get("web", None)
+        web_cfg = web_cfg if isinstance(web_cfg, dict) else {}
+        self.overlay_enabled = bool(web_cfg.get("overlay", True))
+        self.face_mesh_enabled = bool(web_cfg.get("face_mesh", True))
+        self._overlay_lock = threading.Lock()
+        self._overlays: list[dict] = []
+        self._object_overlays: list[dict] = []
+        self._overlays_ts = 0.0
+        self._face_overlays: list[dict] = []
+
+    # ---------- оверлей ----------
+    def _set_overlays(self, items: list[dict]) -> None:
+        with self._overlay_lock:
+            self._overlays = items
+            self._overlays_ts = time.time()
+
+    def _clear_overlays(self) -> None:
+        with self._overlay_lock:
+            self._overlays = []
+            self._overlays_ts = 0.0
+
+    def _draw_overlays(self, frame) -> None:
+        if not self.overlay_enabled:
+            return
+        with self._overlay_lock:
+            overlays = list(self._overlays)
+            ts = self._overlays_ts
+        # старые рамки не должны «прилипать» к кадру, если анализ давно не шёл
+        if not overlays or time.time() - ts > 3.0:
+            return
+        for item in overlays:
+            x1, y1, x2, y2 = (int(v) for v in item["bbox"])
+            color = item.get("color", (0, 255, 0))
+            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+            label = str(item.get("label", ""))
+            if label:
+                (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+                top = max(0, y1 - th - 8)
+                cv2.rectangle(frame, (x1, top), (x1 + tw + 8, top + th + 7),
+                              color, -1)
+                cv2.putText(frame, label, (x1 + 4, top + th + 1),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (8, 12, 20), 1,
+                            cv2.LINE_AA)
+            if self.face_mesh_enabled:
+                self._draw_face_mesh(frame, item, color)
+        return
+
+    @staticmethod
+    def _draw_face_mesh(frame, item: dict, color) -> None:
+        """Точки 106-точечной модели + контур лица — «чертёж лица»."""
+        points = item.get("landmarks")
+        if points is None:
+            return
+        pts = np.asarray(points, dtype=np.int32).reshape(-1, 2)
+        if not len(pts):
+            return
+        try:
+            hull = cv2.convexHull(pts)
+            cv2.polylines(frame, [hull], True, color, 1, cv2.LINE_AA)
+        except cv2.error:
+            pass
+        for px, py in pts:
+            cv2.circle(frame, (int(px), int(py)), 1, color, -1, cv2.LINE_AA)
+        kps = item.get("kps")
+        if kps is not None:
+            for px, py in np.asarray(kps, dtype=np.int32).reshape(-1, 2):
+                cv2.circle(frame, (int(px), int(py)), 3, (255, 255, 255), -1,
+                           cv2.LINE_AA)
+                cv2.circle(frame, (int(px), int(py)), 4, color, 1, cv2.LINE_AA)
+
+    # ---------- управление из веб-панели ----------
+    @property
+    def frames_processed(self) -> int:
+        return self._frame_count
+
+    @property
+    def last_frame_ts(self) -> float:
+        return self._last_frame_ts
+
+    @property
+    def frame_size(self) -> tuple[int, int]:
+        """(ширина, высота) последнего кадра — для карточки камеры."""
+        return self._last_frame_size
+
+    def stop(self) -> None:
+        """Попросить главный цикл завершиться (безопасно из другого потока)."""
+        self._stop.set()
+
+    @property
+    def stopped(self) -> bool:
+        return self._stop.is_set()
+
+    def prepare_start(self) -> None:
+        """Переоткрыть источник после stop(): модели и настройки остаются в памяти."""
+        self._stop.clear()
+        try:
+            self.cam.close()
+        except Exception:
+            pass
+        self.cam = Camera(
+            self.camera_cfg["source"],
+            width=int(self.cfg.camera.width),
+            height=int(self.cfg.camera.height),
+            fps=int(self.cfg.camera.get("fps", 0) or 0),
+        )
+        if self.recorder is not None:
+            try:
+                self.recorder.close()
+            except Exception:
+                pass
+            self.recorder = ClipRecorder(self.cfg, self.name, source_fps=self.cam.fps)
+
+    def snapshot_jpeg(self, quality: int = 85) -> Optional[bytes]:
+        """JPEG последнего кадра (или None, если камера ещё не дала кадров)."""
+        with self._frame_lock:
+            frame = None if self._last_frame is None else self._last_frame.copy()
+        if frame is None:
+            return None
+        ok, buf = cv2.imencode(".jpg", frame,
+                               [int(cv2.IMWRITE_JPEG_QUALITY), int(quality)])
+        return buf.tobytes() if ok else None
 
     # ---------- имя для уведомлений ----------
     def _display_name(self, key: str) -> str:
@@ -92,8 +282,13 @@ class Pipeline:
     # ---------- ленивая загрузка моделей ----------
     def _ensure_models(self) -> None:
         car_enabled = bool(self.cfg.car.get("enabled", True))
-        if self.detector is None and car_enabled:
-            self.detector = YoloDetector(self.cfg, conf_threshold=float(self.cfg.car.conf_threshold))
+        need_detector = car_enabled or self.objects_enabled
+        if self.detector is None and need_detector:
+            conf = float(self.cfg.car.get("conf_threshold", 0.35))
+            if self.objects_enabled:
+                conf = min(conf, self.animal_conf if self.animals_enabled else conf,
+                           self.package_conf if self.packages_enabled else conf)
+            self.detector = YoloDetector(self.cfg, conf_threshold=conf)
         if self.face_recognizer is None and bool(self.cfg.face.get("enabled", True)):
             self.face_recognizer = FaceRecognizer(self.cfg)
         if self.car_analyzer is None and car_enabled:
@@ -223,6 +418,28 @@ class Pipeline:
         def full_bbox(bbox: tuple) -> tuple:
             x1, y1, x2, y2 = bbox
             return (int(x1 * inv), int(y1 * inv), int(x2 * inv), int(y2 * inv))
+
+        def scaled(points):
+            if points is None:
+                return None
+            return np.asarray(points, dtype=np.float32).reshape(-1, 2) * inv
+
+        unknown_label = str(self.cfg.people.get("unknown_label", "Незнакомец"))
+        self._face_overlays = []
+        for m in matches:
+            if m.unknown:
+                label = unknown_label
+                color = (80, 150, 255)  # BGR: оранжевый
+            else:
+                label = f"{m.name} {m.similarity:.2f}"
+                color = (80, 255, 170)  # BGR: зелёный
+            self._face_overlays.append({
+                "bbox": full_bbox(m.bbox),
+                "label": label,
+                "color": color,
+                "landmarks": scaled(m.landmarks),
+                "kps": scaled(m.kps),
+            })
 
         if self.face_tracker is None:
             # старый путь: каждое появление с кулдауном
@@ -407,16 +624,196 @@ class Pipeline:
             if not track.data.get("notified"):
                 self._finalize_car(full_frame, track)
 
-    # ---------- отрисовка рамок (превью) ----------
+    # ---------- ЖИВОТНЫЕ И ОСТАВЛЕННЫЕ ВЕЩИ ----------
+    def _object_conf_floor(self) -> float:
+        values = []
+        if self.animals_enabled:
+            values.append(self.animal_conf)
+        if self.packages_enabled:
+            values.append(self.package_conf)
+        return min(values) if values else 1.0
+
+    def _image_from_track(self, frame, data: dict, prefix: str) -> str:
+        """Фото события: готовый JPEG трека или текущий полный кадр."""
+        jpg = data.get("last_jpg")
+        if jpg:
+            return self._save_image_bytes(jpg, prefix)
+        return self._save_image(frame, prefix)
+
+    def _crop_from_track(self, data: dict, prefix: str) -> str:
+        crop = data.get("best_crop")
+        if crop is None or getattr(crop, "size", 0) == 0:
+            return ""
+        ok, buf = cv2.imencode(".jpg", crop)
+        return self._save_image_bytes(buf.tobytes(), prefix) if ok else ""
+
     @staticmethod
-    def _draw_boxes(frame, dets, scale: float = 1.0) -> None:
+    def _full_bbox(bbox: tuple, scale: float) -> tuple:
+        inv = 1.0 / scale if scale > 0 else 1.0
+        x1, y1, x2, y2 = bbox
+        return (int(x1 * inv), int(y1 * inv), int(x2 * inv), int(y2 * inv))
+
+    def _update_stationary(self, data: dict, bbox: tuple, now: float) -> float:
+        """Сколько секунд объект стоит на месте.
+
+        Порог движения зависит от размера объекта: мелкая сумка не должна
+        «дрожать» на каждом пикселе, крупный чемодан может сместиться сильнее.
+        """
+        x1, y1, x2, y2 = bbox
+        cx, cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
+        size = max(1.0, float(max(x2 - x1, y2 - y1)))
+        threshold = max(self.stationary_min_pixels, size * self.stationary_move_ratio)
+        ref = data.get("still_ref")
+        if ref is None or math.hypot(cx - ref[0], cy - ref[1]) > threshold:
+            data["still_ref"] = (cx, cy)
+            data["still_since"] = now
+        return max(0.0, now - float(data.get("still_since", now)))
+
+    def _announce_animal(self, frame, track) -> None:
+        d = track.data
+        label = majority_vote(list(d.get("label_votes", []))) or d.get("label", "animal")
+        if self.db.is_object_in_cooldown("animal", label, self.animal_cooldown):
+            d["notified"] = True
+            return
+        display = ANIMAL_NAMES.get(label, label)
+        conf = float(d.get("conf", 0.0))
+        img = self._image_from_track(frame, d, f"animal_{label}")
+        crop_img = self._crop_from_track(d, f"animal_{label}_crop")
+        title = f"{display} в кадре"
+        self.db.save_object_event(
+            self.name, "animal", label, display, conf, 0.0, img, crop_img)
+        self.notifier.send_event(
+            title,
+            f"Камера {self.name}\nКласс: {label}\nУверенность: {conf:.2f}",
+            img, extra_images=[crop_img] if crop_img else (),
+        )
+        if self.recorder is not None:
+            self.recorder.trigger("animal")
+        d["notified"] = True
+
+    def _announce_package(self, frame, track) -> None:
+        d = track.data
+        label = majority_vote(list(d.get("label_votes", []))) or d.get("label", "package")
+        if self.db.is_object_in_cooldown("package", label, self.package_cooldown):
+            d["notified"] = True
+            return
+        display = PACKAGE_NAMES.get(label, "Вещь")
+        still = float(d.get("still_seconds", 0.0))
+        conf = float(d.get("conf", 0.0))
+        img = self._image_from_track(frame, d, f"package_{label}")
+        crop_img = self._crop_from_track(d, f"package_{label}_crop")
+        title = PACKAGE_ALERTS.get(label, "Оставленная вещь")
+        self.db.save_object_event(
+            self.name, "package", label, display, conf, still, img, crop_img)
+        self.notifier.send_event(
+            title,
+            (f"Камера {self.name}\nОбъект: {display} ({label})\n"
+             f"Без движения: {int(still)} с\nУверенность: {conf:.2f}"),
+            img, extra_images=[crop_img] if crop_img else (),
+        )
+        if self.recorder is not None:
+            self.recorder.trigger("package")
+        d["notified"] = True
+
+    def _process_objects(self, work: np.ndarray, frame: Optional[np.ndarray] = None,
+                         scale: float = 1.0, dets=None) -> list:
+        """Животные и вещи на том же кадре YOLO.
+
+        Возвращает найденные детекции — для отрисовки в превью.
+        """
+        if not self.objects_enabled:
+            return []
+        full_frame = frame if frame is not None else work
+        if dets is None:
+            if self.detector is None:
+                return []
+            dets = self.detector.predict(work, conf_threshold=self._object_conf_floor())
+        dets = list(dets or [])
+        animals = [d for d in dets
+                   if d.label in self.animal_classes and d.conf >= self.animal_conf]
+        packages = [d for d in dets
+                    if d.label in self.package_classes and d.conf >= self.package_conf]
+        found = animals + packages
+
+        # ----- животные -----
+        if self.animals_enabled:
+            if self.animal_tracker is None:
+                for det in animals:
+                    stub = Track_stub()
+                    stub.data.update({"label_votes": [det.label], "conf": det.conf,
+                                      "bbox": self._full_bbox(det.bbox, scale)})
+                    self._announce_animal(full_frame, stub)
+            else:
+                tracks = self.animal_tracker.update([d.bbox for d in animals])
+                for track, det in zip(tracks, animals):
+                    if track is None:
+                        continue
+                    d = track.data
+                    d.setdefault("label_votes", []).append(det.label)
+                    d["conf"] = max(float(d.get("conf", 0.0)), det.conf)
+                    d["bbox"] = self._full_bbox(det.bbox, scale)
+                    self._remember_best_crop(d, det.crop(work), full_frame, det.conf)
+                    if d.get("notified"):
+                        continue
+                    if track.seen >= self.animal_min_frames:
+                        self._announce_animal(full_frame, track)
+                for track in self.animal_tracker.pop_removed():
+                    if not track.data.get("notified") and track.seen >= self.animal_min_frames:
+                        self._announce_animal(full_frame, track)
+
+        # ----- оставленные вещи -----
+        if self.packages_enabled:
+            if self.package_tracker is None:
+                for det in packages:
+                    stub = Track_stub()
+                    stub.data.update({"label_votes": [det.label], "conf": det.conf,
+                                      "bbox": self._full_bbox(det.bbox, scale)})
+                    self._announce_package(full_frame, stub)
+            else:
+                now = time.time()
+                tracks = self.package_tracker.update([d.bbox for d in packages])
+                for track, det in zip(tracks, packages):
+                    if track is None:
+                        continue
+                    d = track.data
+                    d.setdefault("label_votes", []).append(det.label)
+                    d["conf"] = max(float(d.get("conf", 0.0)), det.conf)
+                    bbox_full = self._full_bbox(det.bbox, scale)
+                    d["bbox"] = bbox_full
+                    self._remember_best_crop(d, det.crop(work), full_frame, det.conf)
+                    d["still_seconds"] = self._update_stationary(d, bbox_full, now)
+                    if d.get("notified"):
+                        continue
+                    if (track.seen >= self.package_min_frames
+                            and d["still_seconds"] >= self.stationary_seconds):
+                        self._announce_package(full_frame, track)
+                for track in self.package_tracker.pop_removed():
+                    d = track.data
+                    if (not d.get("notified")
+                            and track.seen >= self.package_min_frames
+                            and float(d.get("still_seconds", 0.0)) >= self.stationary_seconds):
+                        self._announce_package(full_frame, track)
+
+        return found
+
+    # ---------- отрисовка рамок (превью) ----------
+    _BOX_COLORS = {
+        "car": (0, 255, 0), "truck": (0, 255, 0), "bus": (0, 255, 0),
+        "motorcycle": (0, 255, 0),
+        "dog": (0, 210, 255), "cat": (0, 210, 255), "bird": (0, 210, 255),
+        "backpack": (255, 150, 0), "suitcase": (255, 150, 0), "handbag": (255, 150, 0),
+    }
+
+    @classmethod
+    def _draw_boxes(cls, frame, dets, scale: float = 1.0) -> None:
         inv = 1.0 / scale if scale > 0 else 1.0
         for d in dets:
             x1, y1 = int(d.x1 * inv), int(d.y1 * inv)
             x2, y2 = int(d.x2 * inv), int(d.y2 * inv)
-            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            color = cls._BOX_COLORS.get(d.label, (0, 255, 0))
+            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
             cv2.putText(frame, f"{d.label} {d.conf:.2f}", (x1, max(0, y1 - 5)),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
     # ---------- главный цикл ----------
     def run(self, max_frames: Optional[int] = None) -> None:
@@ -432,7 +829,7 @@ class Pipeline:
         log.info("Поток камеры '%s' запущен (трекинг=%s)", self.name, self.tracking_enabled)
         frames = 0
         try:
-            while True:
+            while not self._stop.is_set():
                 # ночное усреднение кадров (шума меньше → номер/лицо читается в темноте)
                 frame = self._read_averaged()
                 if frame is None:
@@ -441,7 +838,7 @@ class Pipeline:
                         break
                     if max_frames is not None:
                         break
-                    time.sleep(1.0)
+                    self._stop.wait(1.0)
                     continue
                 frames += 1
                 self._frame_count += 1
@@ -455,8 +852,13 @@ class Pipeline:
                 motion_hit = self.motion.detect(frame) if self.motion is not None else True
                 every_hit = (self._frame_count % detect_every == 0)
                 force_hit = (self._frame_count % force_interval == 0)
+                face_on = bool(self.cfg.face.get("enabled", True))
+                face_every = max(1, int(self.cfg.face.get("mesh_every_n_frames", 8)))
+                face_hit = (face_on and self.overlay_enabled and self.face_mesh_enabled
+                            and self._frame_count % face_every == 0)
 
                 analyze = False
+                face_only = False
                 work = frame
                 if motion_hit and (every_hit or force_hit):
                     analyze = True
@@ -469,18 +871,64 @@ class Pipeline:
                     if small_scale < 1.0:
                         h, w = frame.shape[:2]
                         work = cv2.resize(frame, (int(w * small_scale), int(h * small_scale)))
+                elif face_hit:
+                    # «Чертёж лица» обновляем и без движения — человек сидит
+                    # неподвижно, а точки на лице должны оставаться на месте.
+                    analyze = True
+                    face_only = True
+                    if frame_scale < 1.0:
+                        h, w = frame.shape[:2]
+                        work = cv2.resize(frame, (int(w * frame_scale), int(h * frame_scale)))
 
                 if analyze:
                     # координаты пересчитываются обратно в полный кадр
                     scale = work.shape[1] / frame.shape[1] if frame.shape[1] else 1.0
-                    dets = []
-                    if bool(self.cfg.face.get("enabled", True)):
+                    dets: list = []
+                    obj_dets: list = []
+                    car_enabled = bool(self.cfg.car.get("enabled", True))
+                    self._face_overlays = []
+                    if face_on:
                         self._process_faces(work, frame, scale)
-                    if bool(self.cfg.car.get("enabled", True)) and self.detector:
-                        dets = self.detector.predict_vehicles(work)
-                        self._process_vehicles(work, dets, frame, scale)
-                    if preview:
-                        self._draw_boxes(frame, dets, scale)
+                    if face_only:
+                        # без YOLO: только лица, рамки объектов оставляем с прошлого прохода
+                        self._set_overlays(self._object_overlays + self._face_overlays)
+                    else:
+                        # Один прогон YOLO на кадр: машины, животные и вещи
+                        # фильтруются из общего результата (без повторной инференции).
+                        if self.detector is not None and (car_enabled or self.objects_enabled):
+                            conf = (float(self.cfg.car.get("conf_threshold", 0.35))
+                                    if car_enabled else self._object_conf_floor())
+                            if self.objects_enabled:
+                                conf = min(conf, self._object_conf_floor())
+                            all_dets = self.detector.predict(work, conf_threshold=conf)
+                            if car_enabled:
+                                allowed = self.cfg.car.get(
+                                    "detect_classes", ["car", "truck", "bus", "motorcycle"])
+                                dets = [d for d in all_dets if d.label in allowed]
+                                self._process_vehicles(work, dets, frame, scale)
+                            if self.objects_enabled:
+                                obj_dets = self._process_objects(work, frame, scale, all_dets)
+                        # Рамки и «чертёж лица» — и для окна, и для веб-панели.
+                        inv = 1.0 / scale if scale > 0 else 1.0
+                        overlays = []
+                        for d in dets + obj_dets:
+                            overlays.append({
+                                "bbox": (int(d.x1 * inv), int(d.y1 * inv),
+                                         int(d.x2 * inv), int(d.y2 * inv)),
+                                "label": f"{d.label} {d.conf:.2f}",
+                                "color": self._BOX_COLORS.get(d.label, (0, 255, 0)),
+                            })
+                        self._object_overlays = overlays
+                        overlays.extend(self._face_overlays)
+                        self._set_overlays(overlays)
+
+                self._draw_overlays(frame)
+
+                # последний кадр — для кнопки «Снимок» в веб-панели
+                with self._frame_lock:
+                    self._last_frame = frame
+                    self._last_frame_ts = time.time()
+                    self._last_frame_size = (int(frame.shape[1]), int(frame.shape[0]))
 
                 if preview:
                     cv2.imshow(win, frame)
@@ -489,7 +937,7 @@ class Pipeline:
 
                 delay = float(self.cfg.analysis.get("debug_delay", 0.0))
                 if delay > 0:
-                    time.sleep(delay)
+                    self._stop.wait(delay)
                 if max_frames is not None and frames >= max_frames:
                     break
         finally:

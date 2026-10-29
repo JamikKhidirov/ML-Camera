@@ -32,6 +32,8 @@ class FaceMatch:
     similarity: float
     bbox: tuple
     unknown: bool = False
+    landmarks: Optional[np.ndarray] = None
+    kps: Optional[np.ndarray] = None
 
 
 @dataclass
@@ -39,6 +41,8 @@ class DetectedFace:
     embedding: np.ndarray
     det_score: float
     bbox: tuple
+    landmarks: Optional[np.ndarray] = None
+    kps: Optional[np.ndarray] = None
 
 
 class FaceRecognizer:
@@ -124,7 +128,15 @@ class FaceRecognizer:
         for f in faces:
             x1, y1, x2, y2 = (int(v) for v in f.bbox)
             emb = np.asarray(f.normed_embedding, dtype=np.float32)
-            out.append(DetectedFace(embedding=emb, det_score=float(f.det_score), bbox=(x1, y1, x2, y2)))
+            landmark = getattr(f, "landmark_2d_106", None)
+            if landmark is not None:
+                landmark = np.asarray(landmark, dtype=np.float32).reshape(-1, 2)
+            kps = getattr(f, "kps", None)
+            if kps is not None:
+                kps = np.asarray(kps, dtype=np.float32).reshape(-1, 2)
+            out.append(DetectedFace(embedding=emb, det_score=float(f.det_score),
+                                    bbox=(x1, y1, x2, y2),
+                                    landmarks=landmark, kps=kps))
         return out
 
     def recognize(self, frame) -> tuple[list[FaceMatch], list[DetectedFace]]:
@@ -140,7 +152,10 @@ class FaceRecognizer:
                 if s > sim:
                     sim, name = s, known
             if sim >= self.threshold:
-                matches.append(FaceMatch(name=name, similarity=sim, bbox=face.bbox))
+                matches.append(FaceMatch(name=name, similarity=sim, bbox=face.bbox,
+                                         landmarks=face.landmarks, kps=face.kps))
             else:
-                matches.append(FaceMatch(name="unknown", similarity=sim, bbox=face.bbox, unknown=True))
+                matches.append(FaceMatch(name="unknown", similarity=sim, bbox=face.bbox,
+                                         unknown=True, landmarks=face.landmarks,
+                                         kps=face.kps))
         return matches, faces

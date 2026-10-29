@@ -2,7 +2,7 @@
 
 Запуск:
   python scripts/show_events.py [кол-во]
-  python scripts/show_events.py [кол-во] --config config/config.pc.yaml
+  python scripts/show_events.py [кол-во] --config config/config.yaml
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Показать последние события")
     parser.add_argument("limit", nargs="?", type=int, default=50, help="сколько событий (по умолчанию 50)")
     parser.add_argument("--config", default=None,
-                        help="путь к config.yaml (напр. config/config.pc.yaml)")
+                        help="путь к config.yaml (напр. config/config.yaml)")
     args = parser.parse_args()
 
     cfg = load_config(args.config)

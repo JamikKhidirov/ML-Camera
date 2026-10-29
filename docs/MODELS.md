@@ -9,7 +9,7 @@
 
 | Задача | Модель | Лицензия | Размер | Где лежит |
 |---|---|---|---|---|
-| Люди и машины (детекция) | YOLOv8m (ПК) / YOLOv8n (VPS) | AGPL-3.0 | 49.7 / 6.2 МБ | `data/models/` |
+| Люди, машины, животные, вещи | YOLOv8m (ПК) / YOLOv8n (VPS) | AGPL-3.0 | 49.7 / 6.2 МБ | `data/models/` |
 | Лица: детекция + эмбеддинги | InsightFace `buffalo_s` (ПК/слабый CPU) или `buffalo_l` | код MIT, **веса — только некоммерческие исследования** | 158 МБ (`buffalo_s`) | `~/.insightface/models/` |
 | Марка автомобиля | ConvNeXt-Tiny, Stanford Cars (49 марок) | Apache-2.0 | 106 МБ (ONNX) | `data/models/` |
 | Поиск номера на фото | YOLOv9-t 384 license-plate end2end | MIT (пакет), веса из open-image-models | 7.4 МБ | `~/.cache/open-image-models/` |
@@ -29,7 +29,7 @@ pip install -r requirements.txt
 pip install -r requirements-pc.txt
 
 # 2) YOLO + лица + марка + проверка OCR
-python scripts/download_models.py --config config/config.pc.yaml
+python scripts/download_models.py --config config/config.yaml
 
 # 3) нейросетевые номера (FastALPR)
 python scripts/install_alpr.py
@@ -41,14 +41,15 @@ python scripts/install_alpr.py
 
 ```bash
 python scripts/self_check.py
-python scripts/download_models.py --config config/config.pc.yaml
+python scripts/download_models.py --config config/config.yaml
 ```
 
 ---
 
-## 3. Детекция людей и машин — YOLOv8
+## 3. Детекция людей, машин, животных и вещей — YOLOv8
 
-- **Что делает:** находит `person`, `car`, `truck`, `bus`, `motorcycle`.
+- **Что делает:** находит `person`, `car`, `truck`, `bus`, `motorcycle`,
+  а также `dog`, `cat`, `bird` и `backpack`, `suitcase`, `handbag`.
 - **Модель:** Ultralytics YOLOv8. На ПК — `yolov8m.pt` (точнее), на VPS — `yolov8n.pt` (быстрее).
 - **Лицензия:** AGPL-3.0. Для домашнего/личного использования — ок; для продажи
   или закрытого сервиса нужна коммерческая лицензия Ultralytics.
@@ -60,11 +61,22 @@ python scripts/download_models.py --config config/config.pc.yaml
 car:
   detect_classes: ["car", "truck", "bus", "motorcycle"]
   conf_threshold: 0.35
+
+objects:
+  enabled: true
+  animals:
+    classes: ["dog", "cat", "bird"]
+  packages:
+    classes: ["backpack", "suitcase", "handbag"]
+    stationary_seconds: 45
+
 models:
   yolov8: "data/models/yolov8m.pt"   # или yolov8n.pt
 ```
 
 > Класс называется именно `motorcycle` (не `motorbike`).
+> Отдельного класса `package` в COCO нет — «оставленная посылка» определяется
+> как неподвижный рюкзак/чемодан/сумка. Подробно: [`OBJECTS.md`](OBJECTS.md).
 
 ---
 
@@ -139,10 +151,12 @@ Citroen, Dacia, УАЗ, ГАЗ. Такие машины получат `unknown`
 1. Оставить `brand_min_conf: 0.25–0.4` — тогда при неуверенности будет
    `unknown`, а не выдуманная марка.
 2. Отключить марку: `brand_enabled: false` (на VPS так и стоит).
-3. Для своих марок обучить маленький классификатор на своих фото:
-   `scripts/train_brand_classifier.py` (см. `docs/DATASET.md`).
+3. Обучить свою модель на своих фото: `scripts/collect_car_images.py` +
+   `scripts/train_brand_classifier.py`. Подробная инструкция —
+   [`BRAND_RU.md`](BRAND_RU.md).
 
-Цвет и номер от марки не зависят и работают всегда.
+Своя модель экспортируется в тот же формат (`car_brand.onnx` + labels + meta),
+поэтому код менять не нужно. Цвет и номер от марки не зависят и работают всегда.
 
 ---
 
@@ -217,6 +231,8 @@ car:
   предсказуемо, но на ночных ч/б кадрах цвет будет `unknown`.
 - **Трекинг** — CentroidTracker: связывает боксы между кадрами по расстоянию.
   Благодаря нему одна машина = одно уведомление, а не поток.
+- **Неподвижность вещи** — сравнение центра трека с опорной точкой. Это не
+  нейросеть, а геометрия; порог зависит от размера объекта.
 
 ---
 
@@ -226,9 +242,11 @@ car:
 data/models/
 ├── yolov8m.pt              # YOLO (ПК)
 ├── yolov8n.pt              # YOLO (VPS)
-├── car_brand.onnx          # марка
+├── car_brand.onnx          # марка (готовая или своя)
 ├── car_brand_labels.json
-└── car_brand_meta.json
+├── car_brand_meta.json
+├── car_brand.pt            # лучший checkpoint своей модели (опционально)
+└── car_brand.onnx.bak      # backup прежней модели
 
 ~/.insightface/models/buffalo_s/       # лица
 ~/.cache/open-image-models/            # детектор номеров
@@ -244,7 +262,9 @@ data/models/
 | Симптом | Причина / что делать |
 |---|---|
 | `Марка: unknown` всегда | нет `data/models/car_brand.onnx` → `python scripts/download_car_brand_model.py` |
-| Марка врёт на своих машинах | домен Stanford Cars, см. раздел 5 → поднять `brand_min_conf` или отключить |
+| Марка врёт на своих машинах | домен Stanford Cars, см. раздел 5 → поднять `brand_min_conf`, обучить свою (`BRAND_RU.md`) или отключить |
+| Нет событий о животных/вещах | проверить `objects.enabled`, классы и `conf_threshold` (`OBJECTS.md`) |
+| Вещь не считается оставленной | она двигается, камера PTZ или мал `stationary_seconds` |
 | `Нет fast-alpr` | `python scripts/install_alpr.py` |
 | `cv2.imshow` не работает | удалить `opencv-python-headless`, поставить `opencv-python` (это делает `install_alpr.py`) |
 | Номер пустой | движок не установлен, номер мелкий/размытый, или `alpr_conf` слишком высокий |

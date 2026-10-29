@@ -48,3 +48,5 @@ dist/
 build/
 *.spec
 pc/dist/
+config/*.bak
+config/*.tmp

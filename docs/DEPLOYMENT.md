@@ -15,7 +15,7 @@
 |---|---|---|---|
 | 1 | IP сервера | Панель хостинга VPS | GitHub-секрет `SERVER_IP` (или в команды scp/ssh) |
 | 2 | Пароль/логин сервера | Панель хостинга VPS | GitHub-секрет `SERVER_USER`, `SERVER_PASSWORD` |
-| 3 | Ссылки на камеры (RTSP) | приложение камеры + IP в локальной сети | `config/config.vps.yaml` → `cameras` |
+| 3 | Ссылки на камеры (RTSP) | приложение камеры + IP в локальной сети | `config/config.yaml` → `cameras` |
 | 4 | Telegram токен + chat_id | @BotFather и @userinfobot | `config` → `notify.telegram` |
 | 5 | Секретный topic для пуша | придумай сам | `config` → `notify.push.topic` + приложение ntfy |
 
@@ -83,9 +83,9 @@ ssh root@185.23.45.67
 
 ---
 
-## Часть 3. Куда писать: файл `config/config.vps.yaml`
+## Часть 3. Куда писать: файл `config/config.yaml`
 
-Открой **`config/config.vps.yaml`** в любом редакторе (VS Code, Блокнот) и замени
+Открой **`config/config.yaml`** в любом редакторе (VS Code, Блокнот) и замени
 только строки с пометками `-->`:
 
 ```yaml
@@ -114,7 +114,7 @@ notify:
 ```
 
 > Прямые пути ко всем строкам (что, где и зачем) — в файле
-> **`config/config.vps.example.yaml`** — это тот же конфиг с подробными
+> **`config/config.yaml`** — это тот же конфиг с подробными
 > комментариями «замени на...».
 
 Сохрани файл. Всё — конфиг готов.
@@ -144,7 +144,7 @@ notify:
    | `SERVER_IP` | `185.23.45.67` |
    | `SERVER_USER` | `root` |
    | `SERVER_PASSWORD` | пароль сервера |
-   | `CONFIG_YAML` | **весь текст** файла `config/config.vps.yaml` (открой файл, Ctrl+A, Ctrl+C, вставь) |
+   | `CONFIG_YAML` | **весь текст** файла `config/config.yaml` (открой файл, Ctrl+A, Ctrl+C, вставь) |
 
 4. Пуш в main → GitHub сам: протестирует → соберёт образ → по SSH зайдёт на
    сервер (по IP и паролю из секретов) → поставит Docker (если нет) → зальёт
@@ -196,7 +196,7 @@ notify:
 ## Часть 6. Хватит ли сервера за 300 ₽?
 
 - 1-2 vCPU, 1-2 ГБ RAM — да, если:
-  - конфиг VPS (`config.vps.yaml`) с малыми моделями (`yolov8n`, `buffalo_s`,
+  - конфиг VPS (`config.yaml`) с малыми моделями (`yolov8n`, `buffalo_s`,
     `tesseract`);
   - включена детекция движения (`motion.enabled: true`) — модели работают
     только при шевелении;
@@ -208,4 +208,4 @@ notify:
 
 - VPS: timeweb.cloud / vdsina.ru / aeza.net (Ubuntu 22.04/24.04)
 - Пуш на Android: приложение ntfy
-- Шпаргалка по строкам конфига: `config/config.vps.example.yaml`
+- Шпаргалка по строкам конфига: `config/config.yaml`

@@ -53,6 +53,8 @@
     <text x="578" y="190" fill="#42e8a0" font-size="11" text-anchor="middle">car</text>
     <rect x="620" y="172" width="46" height="30" rx="4" fill="none" stroke="#ffc457" stroke-width="2"/>
     <text x="643" y="192" fill="#ffc457" font-size="11" text-anchor="middle">человек</text>
+    <text x="607" y="224" fill="#42e8a0" font-size="11" text-anchor="middle">+ dog · cat · bird</text>
+    <text x="607" y="241" fill="#ff5c6e" font-size="11" text-anchor="middle">+ backpack · suitcase</text>
     <text x="607" y="272" fill="#9aa9c3" font-size="15" text-anchor="middle">детекция объектов</text>
   </g>
 
@@ -80,7 +82,7 @@
   <g>
     <rect x="372" y="300" width="240" height="82" rx="14" fill="#1a2340" stroke="#42e8a0" stroke-width="2"/>
     <text x="492" y="332" fill="#eef4ff" font-size="15" font-weight="700" text-anchor="middle">SQLite + фото</text>
-    <text x="492" y="355" fill="#9aa9c3" font-size="13" text-anchor="middle">события и история</text>
+    <text x="492" y="355" fill="#9aa9c3" font-size="13" text-anchor="middle">события · история · веб-панель</text>
   </g>
   <path d="M612 341 H 700" stroke="#5b7099" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
   <g>
