@@ -25,10 +25,13 @@ def enhance_low_light(frame):
     l = cv2.convertScaleAbs(l, alpha=1.15, beta=10)
     lab = cv2.merge((l, a, b))
     out = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
-    # сохраняем цвет хотя бы частично: чуть повышаем насыщенность (если есть цвет)
+    # В темноте цвет — это в основном шум матрицы (часто фиолетовый).
+    # Раньше мы насыщенность повышали, и картинка становилась лиловой.
+    # Теперь наоборот приглушаем: почти ч/б кадр читается чище, а лицо и
+    # номер от этого только выигрывают. Днём функция не вызывается.
     hsv = cv2.cvtColor(out, cv2.COLOR_BGR2HSV)
     h, s, v = cv2.split(hsv)
-    s = cv2.convertScaleAbs(s, alpha=1.2)
+    s = cv2.convertScaleAbs(s, alpha=0.25)
     out = cv2.cvtColor(cv2.merge((h, s, v)), cv2.COLOR_HSV2BGR)
     # шум ИК-съёмки
     out = cv2.bilateralFilter(out, d=5, sigmaColor=20, sigmaSpace=20)

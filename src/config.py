@@ -54,8 +54,86 @@ class Config:
         return self._path
 
 
+def _env_text(name: str) -> str | None:
+    value = os.environ.get(name)
+    if value is None:
+        return None
+    value = value.strip()
+    return value or None
+
+
+def _env_bool(name: str) -> bool | None:
+    value = _env_text(name)
+    if value is None:
+        return None
+    return value.lower() in ("1", "true", "yes", "on", "да", "вкл")
+
+
+def _env_int(name: str) -> int | None:
+    value = _env_text(name)
+    if value is None:
+        return None
+    try:
+        return int(float(value.replace(",", ".")))
+    except ValueError:
+        return None
+
+
+def apply_env_overrides(data: dict[str, Any]) -> dict[str, Any]:
+    """Переопределить часть конфига переменными окружения (удобно в Docker).
+
+    MLCAMERA_CONFIG               — путь к config.yaml
+    MLCAMERA_WEB_HOST             — 0.0.0.0, чтобы панель была доступна с хоста
+    MLCAMERA_WEB_PORT             — порт панели
+    MLCAMERA_WEB_TOKEN            — пароль панели
+    MLCAMERA_OPEN_BROWSER         — 0 в контейнере (браузера там нет)
+    MLCAMERA_CAMERA_FPS           — FPS камеры
+    MLCAMERA_FALLBACK_WEBCAM      — 0 в контейнере (веб-камеры там нет)
+    MLCAMERA_CAMERA_SOURCE        — заменить список камер одной: rtsp://… или 0
+    MLCAMERA_CAMERA_NAME          — имя этой камеры
+    """
+    if not isinstance(data, dict):
+        return data
+
+    web = data.get("web")
+    if not isinstance(web, dict):
+        web = {}
+        data["web"] = web
+    host = _env_text("MLCAMERA_WEB_HOST")
+    if host:
+        web["host"] = host
+    port = _env_int("MLCAMERA_WEB_PORT")
+    if port:
+        web["port"] = port
+    token = _env_text("MLCAMERA_WEB_TOKEN")
+    if token:
+        web["token"] = token
+    open_browser = _env_bool("MLCAMERA_OPEN_BROWSER")
+    if open_browser is not None:
+        web["open_browser"] = open_browser
+
+    camera = data.get("camera")
+    if not isinstance(camera, dict):
+        camera = {}
+        data["camera"] = camera
+    fps = _env_int("MLCAMERA_CAMERA_FPS")
+    if fps is not None:
+        camera["fps"] = max(0, fps)
+    fallback = _env_bool("MLCAMERA_FALLBACK_WEBCAM")
+    if fallback is not None:
+        camera["fallback_webcam"] = fallback
+
+    source = _env_text("MLCAMERA_CAMERA_SOURCE")
+    if source:
+        if source.isdigit():
+            source = int(source)
+        name = _env_text("MLCAMERA_CAMERA_NAME") or "Камера"
+        data["cameras"] = [{"name": name, "source": source, "enabled": True}]
+    return data
+
+
 def load_config(path: str | Path | None = None) -> Config:
-    cfg_path = Path(path) if path else CONFIG_PATH
+    cfg_path = Path(path or os.environ.get("MLCAMERA_CONFIG") or CONFIG_PATH)
     # Если путь относительный и его нет в текущей папке — ищем от корня проекта.
     # Так скрипты можно запускать из любой директории, а не только из корня.
     if not cfg_path.is_absolute() and not cfg_path.exists():
@@ -63,7 +141,8 @@ def load_config(path: str | Path | None = None) -> Config:
     if not cfg_path.exists():
         raise FileNotFoundError(f"Конфиг не найден: {cfg_path}")
     with open(cfg_path, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
+        data = yaml.safe_load(f) or {}
+    data = apply_env_overrides(data)
     return Config(data, path=cfg_path)
 
 

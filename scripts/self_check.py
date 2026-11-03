@@ -257,9 +257,23 @@ def main() -> int:
         from src.face_recognizer import FaceRecognizer
         fr = FaceRecognizer(cfg)
         base_db = fr.known_names()
-        cap = cv2.VideoCapture(str(ROOT / "data/test_video.mp4"))
-        frame = cap.read()[1]
+        video = ROOT / "data/test_video.mp4"
+        if not video.exists():
+            # Проверка должна работать «из коробки»: генерируем ролик сами,
+            # иначе шаг падал на отсутствующем data/test_video.mp4.
+            writer = cv2.VideoWriter(str(video), cv2.VideoWriter_fourcc(*"mp4v"),
+                                     25, (640, 360))
+            for i in range(30):
+                img = np.zeros((360, 640, 3), dtype=np.uint8)
+                cv2.rectangle(img, (20 + i, 120), (80 + i, 200),
+                              (90, 90, 90), -1)
+                writer.write(img)
+            writer.release()
+        cap = cv2.VideoCapture(str(video))
+        read_ok, frame = cap.read()
         cap.release()
+        if not read_ok or frame is None:
+            frame = np.zeros((360, 640, 3), dtype=np.uint8)
         matches, faces = fr.recognize(frame)
         ok(f"лица: детекция отработала ({len(faces)} найденных, в базе {len(base_db)} человек)")
     except Exception as exc:

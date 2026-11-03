@@ -32,6 +32,7 @@ from src.car_analyzer import CarAnalyzer
 from src.config import Config
 from src.database import Database
 from src.detector import YoloDetector
+from src.face_mesh import draw_face_box, draw_face_mesh, mesh_edges
 from src.face_recognizer import FaceRecognizer
 from src.motion import MotionDetector
 from src.night_vision import ensure_night_quality, is_low_light
@@ -70,6 +71,7 @@ class Pipeline:
             width=int(cfg.camera.width),
             height=int(cfg.camera.height),
             fps=int(cfg.camera.get("fps", 0) or 0),
+            backend=str(cfg.camera.get("backend", "auto")),
         )
         self.detector: Optional[YoloDetector] = None
         self.face_recognizer: Optional[FaceRecognizer] = None
@@ -185,8 +187,14 @@ class Pipeline:
         for item in overlays:
             x1, y1, x2, y2 = (int(v) for v in item["bbox"])
             color = item.get("color", (0, 255, 0))
-            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
             label = str(item.get("label", ""))
+            if item.get("landmarks") is not None:
+                # Лицо: рамка с именем + скелет из 106 точек.
+                draw_face_box(frame, item, thickness=2)
+                if self.face_mesh_enabled:
+                    draw_face_mesh(frame, item, color)
+                continue
+            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
             if label:
                 (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
                 top = max(0, y1 - th - 8)
@@ -195,32 +203,14 @@ class Pipeline:
                 cv2.putText(frame, label, (x1 + 4, top + th + 1),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (8, 12, 20), 1,
                             cv2.LINE_AA)
-            if self.face_mesh_enabled:
-                self._draw_face_mesh(frame, item, color)
-        return
 
     @staticmethod
     def _draw_face_mesh(frame, item: dict, color) -> None:
-        """Точки 106-точечной модели + контур лица — «чертёж лица»."""
-        points = item.get("landmarks")
-        if points is None:
-            return
-        pts = np.asarray(points, dtype=np.int32).reshape(-1, 2)
-        if not len(pts):
-            return
-        try:
-            hull = cv2.convexHull(pts)
-            cv2.polylines(frame, [hull], True, color, 1, cv2.LINE_AA)
-        except cv2.error:
-            pass
-        for px, py in pts:
-            cv2.circle(frame, (int(px), int(py)), 1, color, -1, cv2.LINE_AA)
-        kps = item.get("kps")
-        if kps is not None:
-            for px, py in np.asarray(kps, dtype=np.int32).reshape(-1, 2):
-                cv2.circle(frame, (int(px), int(py)), 3, (255, 255, 255), -1,
-                           cv2.LINE_AA)
-                cv2.circle(frame, (int(px), int(py)), 4, color, 1, cv2.LINE_AA)
+        """Скелет лица: общий рендер для панели, окна OpenCV и Tkinter."""
+        # edges считаются один раз на кадр анализа и кэшируются в оверлее
+        if item.get("edges") is None and item.get("landmarks") is not None:
+            item["edges"] = mesh_edges(item["landmarks"])
+        draw_face_mesh(frame, item, color)
 
     # ---------- управление из веб-панели ----------
     @property
@@ -256,6 +246,7 @@ class Pipeline:
             width=int(self.cfg.camera.width),
             height=int(self.cfg.camera.height),
             fps=int(self.cfg.camera.get("fps", 0) or 0),
+            backend=str(self.cfg.camera.get("backend", "auto")),
         )
         if self.recorder is not None:
             try:
@@ -433,12 +424,15 @@ class Pipeline:
             else:
                 label = f"{m.name} {m.similarity:.2f}"
                 color = (80, 255, 170)  # BGR: зелёный
+            landmarks = scaled(m.landmarks)
             self._face_overlays.append({
                 "bbox": full_bbox(m.bbox),
                 "label": label,
                 "color": color,
-                "landmarks": scaled(m.landmarks),
+                "landmarks": landmarks,
                 "kps": scaled(m.kps),
+                # сетку считаем один раз на анализ, а не на каждый кадр
+                "edges": mesh_edges(landmarks) if landmarks is not None else [],
             })
 
         if self.face_tracker is None:

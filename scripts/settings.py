@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import argparse
+import subprocess
 import sys
 import tkinter as tk
 from pathlib import Path
@@ -146,6 +147,8 @@ class SettingsApp:
         ttk.Button(foot, text="🚀 Сохранить и применить", style="Accent.TButton",
                    command=self.save_and_apply).pack(side="right", padx=(6, 0))
         ttk.Button(foot, text="💾 Сохранить", command=self.save_only).pack(side="right")
+        ttk.Button(foot, text="📷 Открыть камеру", command=self.open_camera).pack(
+            side="right", padx=(0, 6))
         ttk.Button(foot, text="⟳ Перечитать", command=self.reload).pack(side="right", padx=(0, 6))
 
     # -------------------------------------------------------------- камеры
@@ -310,12 +313,26 @@ class SettingsApp:
                 "Работающая панель не ответила — вероятно, камера сейчас не запущена.\n"
                 f"Новые значения применятся при запуске main.py.\n\n({message})")
 
-
     def save_only(self) -> None:
         self._save(apply_running=False)
 
     def save_and_apply(self) -> None:
         self._save(apply_running=True)
+
+    def open_camera(self) -> None:
+        """Открыть живое окно камеры (Tkinter) с рамками и скелетом лица."""
+        script = ROOT / "scripts" / "camera_view.py"
+        if not script.exists():
+            messagebox.showerror("MLCamera", f"Не найден файл:\n{script}")
+            return
+        command = [sys.executable, str(script), "--config",
+                   str(self.cfg.config_path)]
+        try:
+            subprocess.Popen(command, cwd=str(ROOT))
+        except OSError as exc:
+            messagebox.showerror("MLCamera", f"Не удалось открыть камеру:\n{exc}")
+            return
+        self.status.set("Открываю окно камеры (Tkinter)…")
 
     def run(self) -> None:
         self.root.mainloop()

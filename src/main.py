@@ -88,6 +88,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--web", action="store_true", help="запустить веб-панель истории событий")
     p.add_argument("--no-web", action="store_true",
                    help="не запускать веб-панель, даже если web.autostart: true")
+    p.add_argument("--view", action="store_true",
+                   help="открыть камеру в окне Tkinter (скелет лица, высокий FPS)")
     return p
 
 
@@ -101,6 +103,17 @@ def main() -> int:
         cfg.ui._data["preview_enabled"] = True
     if args.recording:
         cfg.recording._data["enabled"] = True
+
+    # Отдельный режим «просто посмотреть камеру»: Tkinter-окно со скелетом
+    # лица. Не запускает БД, уведомления и веб-панель — только видео.
+    if args.view:
+        from src.camera_window import main as camera_window_main
+        argv = []
+        if args.config:
+            argv += ["--config", str(cfg.config_path)]
+        if args.cameras:
+            argv += ["--camera", str(args.cameras[0])]
+        return camera_window_main(argv)
 
     db = Database(cfg)
     notifier = Notifier(cfg)

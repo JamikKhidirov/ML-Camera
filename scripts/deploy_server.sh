@@ -37,12 +37,35 @@ services:
     image: ml_camera:local
     container_name: ml_camera
     restart: unless-stopped
+    command: ["python", "-m", "src.main"]
+    ports:
+      - "\${MLCAMERA_PORT:-8088}:8088"
     volumes:
       - ./data:/app/data
-      - ./config/config.yaml:/app/config/config.yaml:ro
+      - ./config:/app/config
     environment:
-      - TZ=Europe/Moscow
-      - OMP_NUM_THREADS=2
+      - TZ=\${TZ:-Europe/Moscow}
+      - OMP_NUM_THREADS=\${OMP_NUM_THREADS:-2}
+      - MLCAMERA_CONFIG=/app/config/config.yaml
+      - MLCAMERA_WEB_HOST=0.0.0.0
+      - MLCAMERA_WEB_PORT=8088
+      - MLCAMERA_OPEN_BROWSER=0
+      - MLCAMERA_CAMERA_SOURCE=\${MLCAMERA_CAMERA_SOURCE:-}
+      - MLCAMERA_CAMERA_NAME=\${MLCAMERA_CAMERA_NAME:-}
+      - MLCAMERA_CAMERA_FPS=\${MLCAMERA_CAMERA_FPS:-}
+      - MLCAMERA_FALLBACK_WEBCAM=\${MLCAMERA_FALLBACK_WEBCAM:-0}
+      - MLCAMERA_WEB_TOKEN=\${MLCAMERA_WEB_TOKEN:-}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8088/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 YML
 
 echo "==> 4/5 Собираю и запускаю контейнер (первый раз ~5-10 мин)..."
@@ -51,6 +74,7 @@ docker compose -f docker-compose.prod.yml up -d --build
 
 echo "==> 5/5 Готово!"
 echo "Проверка:  docker ps  /  docker logs -f ml_camera"
+echo "Панель:    http://IP-СЕРВЕРА:8088  (порт и пароль — в .env)"
 echo "Конфиг пришёл вместе с проектом (твой config/config.yaml)"
 echo "Если надо поменять: $APP_DIR/config/config.yaml  ->  docker compose -f docker-compose.prod.yml up -d --build"
 echo "События:      $APP_DIR/data/events"

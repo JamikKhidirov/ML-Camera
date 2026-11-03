@@ -1,26 +1,47 @@
-# MLCamera — разворот на сервере через Docker Compose.
+# MLCamera — запуск на сервере/домашнем ПК через Docker Compose.
 #
-# Пошаговая инструкция: docs/DEPLOYMENT.md
-# Короткая версия:
-#   1) на сервере поставь Docker:   curl -fsSL https://get.docker.com | sh
-#   2) скопируй папку на сервер
-#   3) отредактируй config/config.yaml (источники камер, telegram/ntfy)
-#   4) docker compose up -d --build
+# Быстрый старт:
+#   1) cp .env.example .env  и впиши RTSP-адрес камеры (или отредактируй
+#      config/config.yaml — список cameras);
+#   2) docker compose up -d --build
+#   3) открой http://IP-СЕРВЕРА:8088  (пароль — MLCAMERA_WEB_TOKEN из .env)
 #
-# Данные (БД, события, датасеты, модели) живут в ./data и не теряются при перезапуске.
+# Панель слушает 0.0.0.0 внутри контейнера (переменная MLCAMERA_WEB_HOST),
+# поэтому она доступна через проброшенный порт. Данные лежат в ./data,
+# конфиг — в ./config (монтируется на запись: настройки из панели сохраняются).
 services:
   camera:
     build: .
+    image: ml_camera:local
     container_name: ml_camera
     restart: unless-stopped
-    # Полезно знать матрицу: на слабых VPS запусти с --once тест
     command: ["python", "-m", "src.main"]
+    ports:
+      - "${MLCAMERA_PORT:-8088}:8088"
     volumes:
       - ./data:/app/data
-      - ./config/config.yaml:/app/config/config.yaml:ro
+      - ./config:/app/config
     environment:
-      - TZ=Europe/Moscow
-      - OMP_NUM_THREADS=2
+      - TZ=${TZ:-Europe/Moscow}
+      - OMP_NUM_THREADS=${OMP_NUM_THREADS:-2}
+      - MLCAMERA_CONFIG=/app/config/config.yaml
+      # Панель должна слушать все интерфейсы, иначе проброс порта не работает.
+      - MLCAMERA_WEB_HOST=0.0.0.0
+      - MLCAMERA_WEB_PORT=8088
+      # В контейнере нет браузера — не пытаемся его открыть.
+      - MLCAMERA_OPEN_BROWSER=0
+      # Необязательные переопределения (см. .env.example):
+      - MLCAMERA_CAMERA_SOURCE=${MLCAMERA_CAMERA_SOURCE:-}
+      - MLCAMERA_CAMERA_NAME=${MLCAMERA_CAMERA_NAME:-}
+      - MLCAMERA_CAMERA_FPS=${MLCAMERA_CAMERA_FPS:-}
+      - MLCAMERA_FALLBACK_WEBCAM=${MLCAMERA_FALLBACK_WEBCAM:-0}
+      - MLCAMERA_WEB_TOKEN=${MLCAMERA_WEB_TOKEN:-}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8088/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
     logging:
       driver: json-file
       options:

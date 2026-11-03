@@ -42,6 +42,9 @@ class SettingsError(ValueError):
 SECTIONS: list[dict] = [
     {"id": "stream", "title": "Камера и FPS", "icon": "📷",
      "hint": "Разрешение и частота кадров. FPS = 0 — камера отдаёт свой максимум."},
+    {"id": "preview", "title": "Окно камеры (Tkinter)", "icon": "📺",
+     "hint": "Живое окно со скелетом лица. Показ и анализ работают в разных "
+             "потоках, поэтому картинка остаётся плавной."},
     {"id": "analysis", "title": "Анализ кадров", "icon": "🧠",
      "hint": "Как часто запускать ИИ. Больше пропуск — легче процессору, но меньше событий."},
     {"id": "motion", "title": "Движение", "icon": "🎯",
@@ -75,6 +78,11 @@ FIELDS: list[dict] = [
      "type": "int", "min": 160, "max": 3840, "step": 16, "default": 1280, "unit": "px"},
     {"path": "camera.height", "section": "stream", "label": "Высота кадра",
      "type": "int", "min": 120, "max": 2160, "step": 8, "default": 720, "unit": "px"},
+    {"path": "camera.backend", "section": "stream", "label": "Бэкенд камеры",
+     "type": "select", "options": ["auto", "msmf", "dshow", "any"],
+     "default": "auto",
+     "help": "Только Windows. auto — DirectShow, а если он отдаёт чёрный " 
+             "кадр — MSMF. Если камера тормозит — попробуй msmf."},
     {"path": "camera.fallback_webcam", "section": "stream", "label": "Резервная веб-камера",
      "type": "bool", "default": True,
      "help": "Если IP-камеры не открылись — подключить веб-камеру ноутбука (0)."},
@@ -86,6 +94,33 @@ FIELDS: list[dict] = [
      "label": "Усреднять ночные кадры", "type": "bool", "default": True},
     {"path": "camera.frame_averaging_count", "section": "stream",
      "label": "Кадров для усреднения", "type": "int", "min": 2, "max": 10, "default": 3},
+
+    # ---- окно Tkinter ----
+    {"path": "preview.fps", "section": "preview", "label": "FPS окна",
+     "type": "int", "min": 1, "max": 60, "default": 30, "unit": "кадр/с",
+     "help": "Сколько кадров в секунду рисует окно Tkinter. 30 — плавно, "
+             "60 — максимум для монитора 60 Гц."},
+    {"path": "preview.width", "section": "preview", "label": "Ширина картинки",
+     "type": "int", "min": 320, "max": 3840, "step": 16, "default": 960,
+     "unit": "px",
+     "help": "Кадр уменьшается до этой ширины перед показом — так окно "
+             "не тормозит на 4K-камерах."},
+    {"path": "preview.analysis_fps", "section": "preview",
+     "label": "FPS анализа лиц", "type": "int", "min": 1, "max": 30,
+     "default": 12, "unit": "кадр/с",
+     "help": "Как часто искать лица и обновлять скелет. 10–15 — оптимально."},
+    {"path": "preview.analysis_width", "section": "preview",
+     "label": "Ширина кадра для ИИ", "type": "int", "min": 160, "max": 1920,
+     "step": 16, "default": 640, "unit": "px",
+     "help": "InsightFace всё равно работает около 640 px: меньше кадр — "
+             "выше FPS анализа."},
+    {"path": "preview.face_mesh", "section": "preview",
+     "label": "Скелет лица (106 точек)", "type": "bool", "default": True},
+    {"path": "preview.boxes", "section": "preview",
+     "label": "Рамки и имена", "type": "bool", "default": True},
+    {"path": "preview.mirror", "section": "preview", "label": "Зеркалить кадр",
+     "type": "bool", "default": True,
+     "help": "Как в селфи: левая рука — слева. Для IP-камеры можно выключить."},
 
     # ---- анализ ----
     {"path": "analysis.detect_every_n_frames", "section": "analysis",
@@ -127,7 +162,9 @@ FIELDS: list[dict] = [
      "type": "float", "min": 0.1, "max": 0.95, "step": 0.01, "default": 0.4},
     {"path": "face.mesh_every_n_frames", "section": "face",
      "label": "Обновлять «чертёж» каждые", "type": "int", "min": 1, "max": 120,
-     "default": 8, "unit": "кадров"},
+     "default": 4, "unit": "кадров",
+     "help": "4 кадра при 30 FPS — скелет обновляется ~7 раз в секунду и не "
+             "отстаёт от лица."},
     {"path": "face.cooldown_minutes", "section": "face", "label": "Кулдаун лица",
      "type": "int", "min": 0, "max": 1440, "default": 30, "unit": "мин"},
     {"path": "face.notify_unknown", "section": "face", "label": "Сообщать о незнакомцах",
@@ -201,8 +238,9 @@ FIELDS: list[dict] = [
 
     # ---- веб ----
     {"path": "web.stream_fps", "section": "web", "label": "FPS live-потока",
-     "type": "int", "min": 1, "max": 30, "default": 10, "unit": "кадр/с",
-     "help": "Сколько кадров в секунду браузер получает из панели."},
+     "type": "int", "min": 1, "max": 60, "default": 20, "unit": "кадр/с",
+     "help": "Сколько кадров в секунду браузер получает из панели. "
+             "20 — плавно, 30 — максимум для локальной сети."},
     {"path": "web.stream_quality", "section": "web", "label": "Качество JPEG",
      "type": "int", "min": 30, "max": 95, "default": 70, "unit": "%"},
     {"path": "web.overlay", "section": "web", "label": "Рамки объектов",

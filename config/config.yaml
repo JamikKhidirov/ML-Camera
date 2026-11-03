@@ -1,255 +1,169 @@
 # =====================================================================
-#  MLCamera — ЕДИНСТВЕННЫЙ конфиг. Больше файлов настроек нет.
-#
-#  Запуск:  python main.py            (камера + веб-панель)
-#           python main.py --once     (один проход/проверка)
-#           settings.bat              (настройки в окне Tkinter)
-#
-#  Всё можно менять прямо в веб-панели: http://127.0.0.1:8088
-#  вкладка «🛠 Настройки» — поля запишутся в этот же файл.
-#
-#  По умолчанию берётся веб-камера ноутбука (source: 0).
-#  Своя IP-камера: добавь блок в cameras: и поставь ему enabled: true,
-#  а веб-камере — enabled: false. Если камера не откроется, программа
-#  сама переключится на веб-камеру (camera.fallback_webcam).
+#  MLCamera — единственный конфиг. Сохранён из панели/настроек 04.11.2026 00:23.
+#  Все параметры можно менять во вкладке «Настройки» веб-панели
+#  или в приложении scripts/settings.py (Tkinter).
 # =====================================================================
 
 people:
-  # Реальные имена = ИМЕНА ПАПОК в data/datasets/raw/. Именно они в уведомлениях.
   names:
-    Алексей: "Алексей"     # ты
-    Ольга: "Ольга"         # мама
-    Сергей: "Сергей"       # папа
-    Аня: "Аня"             # старшая сестра
-    Катя: "Катя"           # младшая сестра
-    # Бабушка: "Мария"     # добавь после python scripts/add_person.py Бабушка
-  unknown_label: "Незнакомец"
-  # Новый человек: python scripts/add_person.py Имя  -> создаст папку;
-  # положи фото, добавь строку выше, запусти collect_faces.py + register_faces.py
-
+    Алексей: Алексей
+    Ольга: Ольга
+    Сергей: Сергей
+    Аня: Аня
+    Катя: Катя
+  unknown_label: Незнакомец
 cameras:
-  # 0 — веб-камера ноутбука. Живой поток и «чертёж лица» сразу в панели.
-  - name: "Ноутбук (веб-камера)"
-    source: 0
-    enabled: true
-  # Своя IP-камера (пример):
-  # - name: "Двор"
-  #   source: "rtsp://admin:password@192.168.1.100:554/stream1"
-  #   enabled: true
-  # Тест без камеры: source: "data/test_video.mp4"
-
+- name: Ноутбук (веб-камера)
+  source: 0
+  enabled: true
 camera:
   width: 1280
   height: 720
-  # FPS камеры: сколько кадров в секунду запрашивать.
-  #   30 — плавно; 15 — экономно; 0 — не ограничивать (камера отдаёт своё).
-  # Меняется в панели без правки файла.
-  fps: 30
-  # Если ни одна камера из списка не открылась — взять веб-камеру ноутбука.
+  fps: 60
+  backend: auto
   fallback_webcam: true
   night_enabled: true
   night_brightness_threshold: 60
-  # Усреднение НОЧНЫХ кадров: берём N кадров подряд и усредняем — меньше шума,
-  # номер и лицо читаются даже в темноте (включается только при плохом свете)
   frame_averaging_night: true
-  frame_averaging_count: 3
-
+  frame_averaging_count: 10
 analysis:
-  # Анализируем каждый N-й кадр. На ПК можно 1-2, на VPS 5-10.
-  # 4 кадра при веб-камере — живой поток остаётся плавным.
-  detect_every_n_frames: 4
-  # Уменьшение кадра перед анализом (1.0 = без уменьшения, 0.5 = вдвое быстрее).
-  # 0.5 от 1280×720 = 640×360: YOLO и InsightFace всё равно работают в 640.
+  detect_every_n_frames: 3
   frame_scale: 0.5
-  # МУЛЬТИРАЗРЕШЕНИЕ: есть движение — анализ полным кадром;
-  # нет движения — периодический «прочёс» мелким кадром (экономия CPU)
   multi_resolution: true
   small_frame_scale: 0.4
   debug_delay: 0.0
-
 motion:
-  # Детекция движения: анализ включается только когда что-то шевелится.
-  # На ПК с камерой — включай (экономит CPU), на VPS тоже полезно.
   enabled: true
-  # Сколько изменённых пикселей нужно, чтобы сработать (100-3000)
-  threshold: 1500
-  # Уменьшение кадра для сравнения (чем меньше, тем быстрее)
+  threshold: 1000
   scale: 0.25
-  # Раз в столько кадров анализ запускается ВСЁ РАВНО (страховка от пропуска).
-  # 60 кадров ≈ 2 секунды: «чертёж лица» в панели не пропадает, даже если
-  # человек сидит неподвижно.
-  force_interval_frames: 60
-
+  force_interval_frames: 30
 tracking:
-  # Трекинг объектов между кадрами:
-  #   лицо/машина стоят 2 минуты = ОДНО уведомление за проход (без спама);
-  #   номер машины собирается с нескольких кадров «голосованием»;
-  #   пересечение линии в кадре -> «Алексей вошёл / вышел»
   enabled: true
-  # Сколько кадров подряд видим объект, чтобы считать его «появлением»
   min_frames_to_notify: 3
-  # Сколько кадров держим трек после пропадания объекта
   max_disappeared: 20
-  # Макс. смещение центра между кадрами, чтобы считаться одним объектом
   max_distance: 90
-  # Горизонтальная линия «входа» (0.0 верх кадра ... 1.0 низ).
-  # Если центр объекта пересекает линию вниз -> «вошёл», вверх -> «вышел».
-  # Установи значение под твою камеру (где проходит граница входа).
   entry_line_y: 0.5
-  # Для машин свои параметры трекинга (машины двигаются быстрее)
   car_max_disappeared: 6
   car_max_distance: 120
-
 objects:
-  # Животные и оставленные вещи — на ГОТОВЫХ весах YOLO (классы COCO).
-  # Отдельную модель скачивать/обучать не нужно.
-  #   животные: dog, cat, bird
-  #   вещи:     backpack, suitcase, handbag (отдельного класса package нет)
   enabled: true
   max_disappeared: 20
   max_distance: 100
   animals:
     enabled: true
-    classes: ["dog", "cat", "bird"]
+    classes:
+    - dog
+    - cat
+    - bird
     conf_threshold: 0.35
     min_frames: 2
-    cooldown_minutes: 30      # не чаще одного уведомления о собаке в 30 минут
+    cooldown_minutes: 30
   packages:
     enabled: true
-    classes: ["backpack", "suitcase", "handbag"]
-    conf_threshold: 0.40
+    classes:
+    - backpack
+    - suitcase
+    - handbag
+    conf_threshold: 0.4
     min_frames: 3
-    # «Оставленная» = вещь почти не двигалась столько секунд.
-    # Порог движения = max(stationary_min_pixels, размер_вещи * stationary_move_ratio)
     stationary_seconds: 45
     stationary_move_ratio: 0.15
     stationary_min_pixels: 8
     cooldown_minutes: 120
-
 face:
   enabled: true
-  # Провайдеры исполнения InsightFace по порядку:
-  #   ПК с AMD видеокартой: ["DmlExecutionProvider", "CPUExecutionProvider"]
-  #   ПК с NVIDIA (CUDA):   ["CUDAExecutionProvider", "CPUExecutionProvider"]
-  #   Сервер/VPS:           ["CPUExecutionProvider"]
-  providers: ["DmlExecutionProvider", "CUDAExecutionProvider", "CPUExecutionProvider"]
-  # Модель: buffalo_s (легче, быстрее) / buffalo_l (точнее, на ПК можно)
-  model_name: "buffalo_s"
-  detection_size: [640, 640]
+  providers:
+  - DmlExecutionProvider
+  - CUDAExecutionProvider
+  - CPUExecutionProvider
+  model_name: buffalo_s
+  detection_size:
+  - 640
+  - 640
   similarity_threshold: 0.45
   min_det_score: 0.4
-  # «Чертёж лица» обновляется и без движения — раз в N кадров обработки.
-  mesh_every_n_frames: 8
+  mesh_every_n_frames: 4
   cooldown_minutes: 30
   notify_unknown: true
   save_unknown: true
-  # Авто-обучение: лица незнакомцев складываются в data/datasets/auto_unknown/.
-  # Потом посмотри фото, переложи в data/datasets/raw/<имя>/ и запусти
-  # collect_faces.py + register_faces.py — камера "выучит" нового человека.
   auto_capture_unknown: true
-  auto_capture_dir: "data/datasets/auto_unknown"
-
+  auto_capture_dir: data/datasets/auto_unknown
 car:
   enabled: true
-  detect_classes: ["car", "truck", "bus", "motorcycle"]
+  detect_classes:
+  - car
+  - truck
+  - bus
+  - motorcycle
   conf_threshold: 0.35
   color_enabled: true
-  # Марка: готовая модель, обученная на Stanford Cars (49 марок).
-  #   python scripts/download_car_brand_model.py
   brand_enabled: true
   brand_tta: true
   brand_min_conf: 0.25
   plate_enabled: true
-  # tesseract — лёгкий | easyocr — точнее | fastalpr — нейросеть (точнее всего)
-  # fastalpr: python scripts/install_alpr.py
-  plate_engine: "tesseract"
-  # Сколько кадров «голосуют» за номер (трекинг собирает OCR с каждого кадра,
-  # берётся самый частый результат) — размытый номер читается точнее
+  plate_engine: tesseract
   plate_vote_frames: 5
-  # Белый список своих номеров (формат как в уведомлении: A123BC 777):
-  # такие машины будут подписаны «Своя машина», остальные — «Чужая машина ...»
-  known_plates:
-    # - "A123BC 777"
+  known_plates: null
   cooldown_minutes: 60
-
 models:
-  # На ПК можно yolov8m / yolov8l (точнее, но медленнее). Сервер: yolov8n
-  yolov8: "data/models/yolov8n.pt"
-  brand_onnx: "data/models/car_brand.onnx"
-  brand_labels: "data/models/car_brand_labels.json"
-
+  yolov8: data/models/yolov8n.pt
+  brand_onnx: data/models/car_brand.onnx
+  brand_labels: data/models/car_brand_labels.json
 database:
-  path: "data/db/ml_camera.db"
-
+  path: data/db/ml_camera.db
 storage:
-  events_dir: "data/events"
-
+  events_dir: data/events
 recording:
-  # Запись видео с камеры в ОТДЕЛЬНУЮ ПАПКУ data/videos/<камера>/
   enabled: false
-  # events      — короткие клипы вокруг события (лицо/машина/незнакомец)
-  # continuous  — непрерывная запись потока (файл каждые rotate_seconds сек)
-  mode: "events"
-  output_dir: "data/videos"
+  mode: events
+  output_dir: data/videos
   seconds_before: 3
   seconds_after: 3
   rotate_seconds: 300
   fps: 12
-  fourcc: "mp4v"
-
+  fourcc: mp4v
 ui:
-  # Живое окно предпросмотра с рамками (только когда на ПК есть дисплей)
   preview_enabled: false
-  window_title: "MLCamera — {cam}"
-
+  window_title: MLCamera — {cam}
+preview:
+  fps: 30
+  width: 960
+  analysis_fps: 12
+  analysis_width: 640
+  face_mesh: true
+  boxes: true
+  mirror: true
 web:
-  # Локальная веб-панель: история, камеры, live-поток и управление.
-  #   отдельно:  python scripts/web_panel.py --config config/config.yaml
-  #   с камерой: web.autostart: true  или  python main.py --web
-  # Для доступа с телефона: host: "0.0.0.0" и обязательно token: "пароль".
   enabled: true
   autostart: true
-  # Открыть http://127.0.0.1:8088 в браузере сразу после запуска main.py
   open_browser: true
-  host: "127.0.0.1"
+  host: 127.0.0.1
   port: 8088
-  title: "MLCamera — история событий"
-  token: ""
-  control: true            # кнопки старт/стоп/снимок (только при запуске с камерой)
-  overlay: true            # рамки объектов и «чертёж лица» на live-потоке
-  face_mesh: true          # 106 точек лица по модели InsightFace
-  # Live-поток в браузере: частота и качество JPEG (настраивается в панели).
-  stream_fps: 10           # кадров в секунду в MJPEG-потоке (1–30)
-  stream_quality: 70       # качество JPEG, % (30–95)
-
+  title: MLCamera — история событий
+  token: ''
+  control: true
+  overlay: true
+  face_mesh: true
+  stream_fps: 20
+  stream_quality: 70
 notify:
   min_interval_seconds: 30
   telegram:
     enabled: true
-    # Создай бота через @BotFather, получи токен
-    bot_token: "PASTE_TELEGRAM_BOT_TOKEN"
-    # Токен можно отдавать через переменную окружения: bot_token: "${BOT_TOKEN}"
-    # Кому слать НАСТОЯЩЕЕ значения (несколько аккаунтов):
+    bot_token: PASTE_TELEGRAM_BOT_TOKEN
     chat_ids:
-      - "111111111"       # --> твой chat_id (узнай через @userinfobot)
-      - "222222222"       # --> chat_id сестры/родителей (кому ещё присылать)
-    # Либо старый вариант для одного получателя:
-    # chat_id: "111111111"
-  # Удалять фото с сервера после успешной отправки? (на VPS места мало — ставь true)
+    - '111111111'
+    - '222222222'
   delete_images_after_send: false
   push:
     enabled: true
-    provider: "ntfy"
-    server: "https://ntfy.sh"
-    topic: "my_camera_unique_secret_topic"
-
+    provider: ntfy
+    server: https://ntfy.sh
+    topic: my_camera_unique_secret_topic
 digest:
-  # Ежедневный дайджест: утром шлёт в Telegram/ntfy сводку за сутки
-  # («кто приходил, какие машины, незнакомцы»)
   enabled: true
-  time: "09:00"        # время отправки (по времени сервера)
-  hours: 24            # за сколько часов собирать сводку
-
+  time: 09:00
+  hours: 24
 logging:
-  level: "INFO"
-  file: "data/logs/camera.log"
+  level: INFO
+  file: data/logs/camera.log

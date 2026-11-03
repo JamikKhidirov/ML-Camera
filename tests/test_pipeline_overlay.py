@@ -46,9 +46,9 @@ def test_face_mesh_is_drawn(pipe):
                    dtype=np.float32)
     pipe._draw_face_mesh(frame, {"landmarks": points, "kps": kps}, (0, 255, 0))
     assert np.count_nonzero(frame) > 0
-    # контур лица (hull) проходит по краям прямоугольника
-    assert frame[80, 160].any()
-    assert frame[160, 160].any()
+    # сами точки скелета точно попали на кадр
+    assert frame[80, 120].any()
+    assert frame[160, 200].any()
 
 
 def test_overlay_draws_boxes_and_skips_without_landmarks(pipe):
@@ -62,7 +62,7 @@ def test_overlay_draws_boxes_and_skips_without_landmarks(pipe):
     ])
     pipe._draw_overlays(frame)
     assert frame[20, 20].any() or frame[21, 21].any()
-    assert frame[60, 200].any()
+    assert frame[60, 160].any()
 
 
 def test_overlay_can_be_disabled(monkeypatch):

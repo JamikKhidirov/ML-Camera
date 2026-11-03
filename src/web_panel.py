@@ -797,7 +797,7 @@ const CAM_STATE = {
   error:["ошибка","st-error"]
 };
 let cameras = [], controllable = false, staleStatus = false;
-let streamCfg = {fps: 10, quality: 70};
+let streamCfg = {fps: 20, quality: 70};
 let autoTimer = null, autoOn = true, lastDate = null;
 let activeTab = "cameras";
 let modalKind = null, modalCamIndex = -1, modalTimer = null;
@@ -866,7 +866,7 @@ function setOnline(ok, label){
 }
 function liveUrl(index){
   return "/api/cameras/stream?index=" + encodeURIComponent(index) +
-         "&fps=" + (streamCfg.fps || 10) +
+         "&fps=" + (streamCfg.fps || 20) +
          "&quality=" + (streamCfg.quality || 70) + "&t=" + Date.now();
 }
 async function api(path, params){
@@ -1121,7 +1121,7 @@ async function loadCameras(){
     if (d.stream){
       const changed = Number(d.stream.fps) !== Number(streamCfg.fps) ||
                       Number(d.stream.quality) !== Number(streamCfg.quality);
-      streamCfg = {fps: Number(d.stream.fps) || 10, quality: Number(d.stream.quality) || 70};
+      streamCfg = {fps: Number(d.stream.fps) || 20, quality: Number(d.stream.quality) || 70};
       if (changed) refreshLiveStreams();
     }
     applyCameras(d.cameras, d.controllable, d.stale);
@@ -2022,14 +2022,16 @@ class EventsHandler(BaseHTTPRequestHandler):
         params = parse_qs(parsed.query)
         path = parsed.path.rstrip("/") or "/"
         self._set_auth_cookie = False
+        # Healthcheck для Docker/systemd: без токена, ничего не раскрывает.
+        if path == "/health":
+            self._send_json({"ok": True}, head)
+            return
         if not self._authorized(params):
             self._unauthorized(head)
             return
         try:
             if path in ("/", "/index.html"):
                 self._send_html(head)
-            elif path == "/health":
-                self._send_json({"ok": True}, head)
             elif path == "/api/events":
                 self._api_events(params, head)
             elif path == "/api/stats":
@@ -2286,7 +2288,7 @@ class EventsHandler(BaseHTTPRequestHandler):
         manager = self._srv.manager
         stats = self._srv.db.camera_stats(24)
         stream = {
-            "fps": int(_web_value(self._srv.cfg, "stream_fps", 10)),
+            "fps": int(_web_value(self._srv.cfg, "stream_fps", 20)),
             "quality": int(_web_value(self._srv.cfg, "stream_quality", 70)),
         }
         if manager is not None:
@@ -2385,7 +2387,7 @@ class EventsHandler(BaseHTTPRequestHandler):
             self._send_bytes(400, "text/plain; charset=utf-8", b"Bad index", head)
             return
         fps = _int_param(params, "fps",
-                         int(_web_value(self._srv.cfg, "stream_fps", 10)), 1, 30)
+                         int(_web_value(self._srv.cfg, "stream_fps", 20)), 1, 60)
         quality = _int_param(params, "quality",
                             int(_web_value(self._srv.cfg, "stream_quality", 70)), 30, 95)
         boundary = "mlcframe" + secrets.token_hex(6)

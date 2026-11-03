@@ -1,0 +1,19 @@
+# Данные, модели и артефакты не нужны внутри образа — они монтируются из ./data.
+data/*
+.git
+.gitignore
+.github
+.venv
+venv
+__pycache__
+**/__pycache__
+*.pyc
+build
+dist
+pc/dist
+*.spec
+docs/assets
+.env
+*.local.yaml
+config/*.bak
+config/*.tmp

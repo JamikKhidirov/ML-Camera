@@ -206,6 +206,24 @@ def test_token_auth(tmp_path):
         db.close()
 
 
+def test_health_is_public_even_with_token(tmp_path):
+    """Docker healthcheck не знает пароль — /health должен отвечать всегда."""
+    cfg = _cfg(tmp_path, token="s3cret")
+    server, db, base = _start(cfg)
+    try:
+        status, _, body = _get(base + "/health")
+        assert status == 200
+        assert json.loads(body)["ok"] is True
+        # остальные API по-прежнему закрыты
+        with pytest.raises(urllib.error.HTTPError) as err:
+            _get(base + "/api/events")
+        assert err.value.code == 401
+    finally:
+        server.shutdown()
+        server.server_close()
+        db.close()
+
+
 def test_cameras_api_with_manager(tmp_path):
     cfg = _cfg(tmp_path)
     manager = FakeManager()

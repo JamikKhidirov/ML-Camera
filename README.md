@@ -220,6 +220,54 @@ recording:
 Проверить камеру, не оставляя её работать: `python main.py --once` —
 обработает ~30 кадров и выйдет.
 
+### Окно камеры в Tkinter (скелет лица + высокий FPS)
+
+Отдельное лёгкое окно: живое видео, рамка с именем и **скелет лица по
+106 точкам** (овал, брови, глаза, нос, губы). Запускается без браузера,
+БД и уведомлений — удобно проверить камеру и свет.
+
+```bash
+camera.bat                      # Windows: двойной клик
+python main.py --view           # из главного меню
+python -m src.camera_window     # напрямую
+python main.py --view --cameras 1
+python -m src.camera_window --source 0          # веб-камера
+python -m src.camera_window --source rtsp://... # IP-камера
+```
+
+![Окно камеры MLCamera](docs/assets/camera_window.png)
+
+| Кнопка / клавиша | Что делает |
+|---|---|
+| `⏸ Пауза` / `Пробел` | остановить показ (камера продолжает работать) |
+| `📷 Снимок` / `S` | сохранить кадр в `data/snapshots/` |
+| `⛶ Экран` / `F11` | полный экран, `Esc` — выход |
+| `⏸`/`Зеркало`/`Рамки`/`Скелет` | включить/выключить элементы |
+| `⚙` | открыть настройки (тот же `config/config.yaml`) |
+
+Почему картинка плавная: **захват кадров, анализ лиц и отрисовка окна
+идут в разных потоках**. Нейросеть не блокирует показ видео.
+
+```yaml
+preview:
+  fps: 30                # FPS окна (1–60)
+  width: 960             # до какой ширины ужимать кадр
+  analysis_fps: 12       # как часто искать лица и обновлять скелет
+  analysis_width: 640    # ширина кадра для InsightFace
+  face_mesh: true        # скелет лица
+  boxes: true            # рамки и имена
+  mirror: true           # зеркалить, как в селфи
+
+camera:
+  width: 1280
+  height: 720
+  fps: 30                # 0 — не ограничивать
+  backend: "auto"        # Windows: DirectShow → MSMF; можно "dshow"/"msmf"
+```
+
+> На слабом CPU уменьши `preview.analysis_fps` до 8 и `analysis_width` до
+> 480 — показ останется плавным, скелет будет обновляться чуть реже.
+
 ### Управление камерой из веб-панели
 
 Если панель запущена вместе с камерой (`main.py`), во вкладке **«Камеры»**
@@ -278,7 +326,7 @@ web:
 
 Служебные адреса:
 
-- поток: `/api/cameras/stream?index=0&fps=10&quality=70`;
+- поток: `/api/cameras/stream?index=0&fps=20&quality=70`;
 - снимок: `/api/cameras/snapshot?index=0&quality=90&download=1`;
 - статусы: `/api/cameras`, система: `/api/system`, график: `/api/timeline`.
 
@@ -447,6 +495,7 @@ python main.py                      # камера + панель + браузе
 
 ```bash
 python main.py --once               # 30 кадров и выход — проверка
+python main.py --view               # окно камеры: скелет лица, 30 FPS
 python main.py --preview            # окно с рамками
 python main.py --no-web             # только камера, без панели
 python scripts/settings.py          # настройки в Tkinter
@@ -466,7 +515,7 @@ python scripts/self_check.py
 python -m pytest -q
 ```
 
-Ожидаемо: `83 passed`, самопроверка без ошибок, `--once` завершается с кодом `0`.
+Ожидаемо: `100 passed, 1 skipped`, самопроверка без ошибок, `--once` завершается с кодом `0`.
 
 ---
 
@@ -480,6 +529,7 @@ python -m pytest -q
 | `python main.py --config ПУТЬ` | другой конфиг (по умолчанию `config/config.yaml`) |
 | `python main.py --cameras 0 2` | только выбранные камеры из списка |
 | `python main.py --once` | ~30 кадров и выход — быстрая проверка |
+| `python main.py --view` | окно камеры Tkinter: скелет лица, высокий FPS |
 | `python main.py --preview` | окно с рамками |
 | `python main.py --recording` | запись видео |
 | `python main.py --web` | поднять веб-панель вместе с камерой (старт/стоп и снимок доступны) |
@@ -498,6 +548,7 @@ python -m pytest -q
 | `scripts/web_panel.py` | веб-панель отдельным процессом (статусы камер — только просмотр) |
 | `scripts/settings.py` | настройки в окне Tkinter (все поля, как в панели) |
 | `settings.bat` | то же в один двойной клик (Windows) |
+| `scripts/camera_view.py` / `camera.bat` | окно камеры со скелетом лица (Tkinter) |
 | `scripts/collect_car_images.py` | собрать фото машин в датасет марок |
 | `scripts/train_brand_classifier.py` | обучить свою модель марок |
 | `scripts/show_events.py` | последние события в консоли |
@@ -531,7 +582,10 @@ python -m pytest -q
 |---|---|
 | `camera.fps` | FPS камеры (0 — максимум камеры, 30 — плавно) |
 | `camera.width` / `camera.height` | разрешение кадра |
-| `web.stream_fps` | FPS live-потока в браузере (1–30) |
+| `camera.backend` | Windows: `auto` / `dshow` / `msmf` / `any` |
+| `preview.fps` / `preview.analysis_fps` | FPS окна Tkinter и частота поиска лиц |
+| `preview.width` / `preview.analysis_width` | размер картинки и кадра для ИИ |
+| `web.stream_fps` | FPS live-потока в браузере (1–60) |
 | `web.stream_quality` | качество JPEG live-потока (30–95) |
 | `recording.fps` | FPS записи видео |
 | `analysis.detect_every_n_frames` | как часто запускать ИИ |
@@ -669,6 +723,27 @@ data/
 
 ---
 
+## 🐳 Docker
+
+Серверная сборка «камера + панель + база + уведомления» в одном контейнере.
+Данные и конфиг остаются на хосте в `./data` и `./config` — пересборка их
+не стирает.
+
+```bash
+copy .env.example .env        # Linux/macOS: cp .env.example .env
+# вписать RTSP-адрес в MLCAMERA_CAMERA_SOURCE
+docker compose up -d --build
+```
+
+Панель: **http://localhost:8088**. Проверка: `docker compose ps` →
+`running (healthy)`, логи: `docker compose logs -f camera`.
+
+Веб-камеру ноутбука в Linux-контейнер не пробросить — для сервера нужна
+IP-камера (RTSP). Healthcheck, переменные, тома, обновление и разбор ошибок:
+[`docs/DOCKER.md`](docs/DOCKER.md).
+
+---
+
 ## 📚 Документация
 
 | Документ | О чём |
@@ -683,6 +758,7 @@ data/
 | [`docs/RUNBOOK.md`](docs/RUNBOOK.md) | все команды, флаги и скрипты |
 | [`docs/DATASET.md`](docs/DATASET.md) | как фотографировать людей для точного распознавания |
 | [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | деплой на VPS |
+| [`docs/DOCKER.md`](docs/DOCKER.md) | Docker: compose, `.env`, тома, healthcheck, обновление |
 | [`docs/VPS_CAMERAS.md`](docs/VPS_CAMERAS.md) | как соединить домашнюю камеру и сервер |
 
 ---
