@@ -235,7 +235,7 @@ python -m src.camera_window --source 0          # веб-камера
 python -m src.camera_window --source rtsp://... # IP-камера
 ```
 
-![Окно камеры MLCamera](docs/assets/camera_window.png)
+![Окно камеры MLCamera]
 
 | Кнопка / клавиша | Что делает |
 |---|---|
