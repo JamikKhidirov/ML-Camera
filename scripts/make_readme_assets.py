@@ -510,12 +510,13 @@ def make_pipeline_svg() -> None:
 def make_models_svg() -> None:
     cards = [
         ("ДЕТЕКЦИЯ", "YOLOv8m / n", "люди · машины · звери", "6–50 МБ", "AGPL-3.0", "#42e8a0", "Y"),
+        ("ТЕЛО", "YOLOv8n-pose", "17 точек COCO", "6.5 МБ", "AGPL-3.0", "#7dd3fc", "S"),
         ("ЛИЦА", "InsightFace", "детекция + эмбеддинги", "158 МБ", "MIT / research", "#966eff", "F"),
         ("МАРКА", "ConvNeXt-Tiny", "49 марок", "106 МБ", "Apache-2.0", "#40d6ff", "B"),
         ("НОМЕР", "YOLOv9-t", "поиск пластины", "7.4 МБ", "MIT", "#ffc457", "D"),
         ("НОМЕР", "MobileViT v2", "чтение символов", "14.5 МБ", "MIT", "#ff5c6e", "O"),
     ]
-    margin, gap, card_w = 30, 14, 176
+    margin, gap, card_w = 24, 10, 150
     card_y, card_h = 104, 232
     parts = []
     for i, (role, name, sub, size, lic, color, glyph) in enumerate(cards):
@@ -552,7 +553,7 @@ def make_models_svg() -> None:
   </g>
   <text x="500" y="42" fill="#eef4ff" font-size="24" font-weight="700" text-anchor="middle">Нейросети внутри MLCamera</text>
   <rect x="400" y="54" width="200" height="3" rx="1.5" fill="url(#accent)"/>
-  <text x="500" y="78" fill="#9aa9c3" font-size="13" text-anchor="middle">5 готовых моделей · животные и вещи — на той же YOLO</text>
+  <text x="500" y="78" fill="#9aa9c3" font-size="13" text-anchor="middle">6 готовых моделей · животные и вещи — на той же YOLO</text>
 {''.join(parts)}
   <text x="500" y="392" fill="#5b7099" font-size="12" text-anchor="middle">YOLO · InsightFace · ConvNeXt · FastALPR · всё локально на CPU</text>
 </svg>

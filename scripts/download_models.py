@@ -6,6 +6,7 @@
 
 Скачивает ровно те модели, которые указаны в выбранном конфиге:
   - YOLO (детекция людей и машин) — ultralytics качает сама при первом запуске;
+  - YOLOv8-pose (скелет тела) — 17 точек COCO для окна Tkinter;
   - InsightFace (лица) — модель из face.model_name (buffalo_s / buffalo_l);
   - марка автомобиля — готовая ConvNeXt-Tiny (49 марок, Stanford Cars),
     если в конфиге включено car.brand_enabled;
@@ -37,14 +38,22 @@ def main() -> int:
     models_dir = cfg.models.resolve("data/models")
     models_dir.mkdir(parents=True, exist_ok=True)
 
-    yolo_path = Path(str(cfg.models.yolov8))
-    print(f"=== 1/4 Проверяю YOLO ({yolo_path.name}: люди + машины) ===")
     from ultralytics import YOLO
+
+    yolo_path = Path(str(cfg.models.yolov8))
+    print(f"=== 1/5 Проверяю YOLO ({yolo_path.name}: люди + машины) ===")
     m = YOLO(str(cfg.models.resolve(cfg.models.yolov8)))  # сама скачает weights, если нет
     print(f"    YOLO готова: {len(m.names)} классов")
 
+    models_cfg = cfg.get("models", {}) or {}
+    pose_raw = str(models_cfg.get("pose", "data/models/yolov8n-pose.pt"))
+    pose_path = cfg.resolve(pose_raw)
+    print(f"=== 2/5 Проверяю YOLO pose ({pose_path.name}: скелет тела) ===")
+    YOLO(str(pose_path))  # скачает yolov8n-pose.pt, если файла нет
+    print("    YOLO pose готова: 17 точек COCO")
+
     face_model = str(cfg.face.model_name)
-    print(f"=== 2/4 Проверяю InsightFace {face_model} (лица) ===")
+    print(f"=== 3/5 Проверяю InsightFace {face_model} (лица) ===")
     from insightface.app import FaceAnalysis
     app = FaceAnalysis(name=face_model, providers=["CPUExecutionProvider"])
     app.prepare(ctx_id=-1, det_size=tuple(int(x) for x in cfg.face.detection_size))
@@ -53,7 +62,7 @@ def main() -> int:
     brand_onnx = cfg.models.resolve(cfg.models.brand_onnx)
     brand_labels = cfg.models.resolve(cfg.models.brand_labels)
     brand_wanted = bool(cfg.car.get("brand_enabled", False)) or brand_onnx.exists()
-    print("=== 3/4 Марка автомобиля (ConvNeXt-Tiny, Stanford Cars) ===")
+    print("=== 4/5 Марка автомобиля (ConvNeXt-Tiny, Stanford Cars) ===")
     if args.skip_brand or not brand_wanted:
         print("    пропущено (car.brand_enabled: false)")
     elif brand_onnx.exists() and brand_labels.exists():
@@ -67,7 +76,7 @@ def main() -> int:
             print("    ВНИМАНИЕ: не удалось скачать модель марки, марка будет 'unknown'")
 
     engine = str(cfg.car.get("plate_engine", "tesseract")).lower()
-    print(f"=== 4/4 Проверяю OCR номеров ({engine}) ===")
+    print(f"=== 5/5 Проверяю OCR номеров ({engine}) ===")
     if engine == "easyocr":
         try:
             import easyocr  # noqa: F401

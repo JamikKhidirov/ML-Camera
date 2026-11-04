@@ -142,10 +142,14 @@ def draw_face_mesh(frame: np.ndarray, item: dict,
         return 0
 
     bbox = item.get("bbox")
+    small_face = False
     if bbox and len(bbox) == 4:
         bw = max(1, int(bbox[2]) - int(bbox[0]))
         bh = max(1, int(bbox[3]) - int(bbox[1]))
         radius = max(1, min(3, int(min(bw, bh) * 0.008)))
+        # На маленьком лице 106 точек сливаются в «кашу». Оставляем линии,
+        # а точки рисуем только когда лицо достаточно крупное.
+        small_face = min(bw, bh) < 90
     else:
         radius = 1
 
@@ -171,8 +175,9 @@ def draw_face_mesh(frame: np.ndarray, item: dict,
                       max(1, thickness + 1), cv2.LINE_AA)
 
     # Сами точки: маленькие — landmarks, крупные — 5 ключевых точек (kps).
-    for x, y in points:
-        cv2.circle(frame, (int(x), int(y)), radius, color, -1, cv2.LINE_AA)
+    if not small_face:
+        for x, y in points:
+            cv2.circle(frame, (int(x), int(y)), radius, color, -1, cv2.LINE_AA)
 
     kps = as_points(item.get("kps"))
     if kps is not None:

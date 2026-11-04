@@ -28,6 +28,7 @@ from src.camera import Camera
 from src.face_mesh import draw_face_box, draw_face_mesh, mesh_edges
 from src.face_recognizer import FaceRecognizer
 from src.night_vision import ensure_night_quality
+from src.pose import POSE_COLOR, PoseEstimator, PoseOverlay, draw_pose
 
 log = logging.getLogger(__name__)
 
@@ -77,12 +78,14 @@ class CameraPreview:
     """
 
     def __init__(self, cfg, camera_cfg: dict,
-                 recognizer_factory=FaceRecognizer):
+                 recognizer_factory=FaceRecognizer,
+                 pose_factory=PoseEstimator):
         self.cfg = cfg
         self.camera_cfg = dict(camera_cfg or {})
         self.name = str(self.camera_cfg.get("name", "Камера"))
         self.source = self.camera_cfg.get("source", 0)
         self._recognizer_factory = recognizer_factory
+        self._pose_factory = pose_factory
 
         preview_cfg = cfg.get("preview", {}) or {}
         self.display_fps = _int_setting(preview_cfg, "fps", 30, 1, 60)
@@ -94,6 +97,10 @@ class CameraPreview:
         self.face_mesh_enabled = bool(preview_cfg.get("face_mesh", True))
         self.boxes_enabled = bool(preview_cfg.get("boxes", True))
         self.mirror = bool(preview_cfg.get("mirror", True))
+        self.pose_enabled = bool(preview_cfg.get("pose", True))
+        self.pose_fps = _float_setting(preview_cfg, "pose_fps", 8.0, 1.0, 30.0)
+        self.pose_conf = _float_setting(preview_cfg, "pose_conf", 0.35,
+                                        0.05, 0.95)
 
         camera_cfg_all = cfg.get("camera", {}) or {}
         self.width = int(camera_cfg_all.get("width", 1280) or 1280)
@@ -112,6 +119,10 @@ class CameraPreview:
         self._latest_ts = 0.0
         self._faces: list[FaceOverlay] = []
         self._faces_ts = 0.0
+        self._poses: list[PoseOverlay] = []
+        self._poses_ts = 0.0
+        self._pose_fps = 0.0
+        self._pose_error = ""
         self._frame_count = 0
         self._capture_fps = 0.0
         self._analysis_fps = 0.0
@@ -132,10 +143,15 @@ class CameraPreview:
             return
         self._stop.clear()
         self._error = ""
+        self._pose_error = ""
         self._status = "Открываю камеру…"
         self._display_base = None
         self._display_base_ts = -1.0
         self._display_base_mirror = None
+        with self._lock:
+            self._poses = []
+            self._poses_ts = 0.0
+            self._pose_fps = 0.0
         try:
             self._cam = Camera(
                 self.source,
@@ -190,6 +206,7 @@ class CameraPreview:
         fps_window_start = time.perf_counter()
         fps_window_frames = 0
         empty_streak = 0
+        next_file_at = time.perf_counter()
         while not self._stop.is_set():
             cam = self._cam
             if cam is None:
@@ -231,8 +248,20 @@ class CameraPreview:
                 fps_window_start = now
                 fps_window_frames = 0
 
+            # Видеофайл читается мгновенно, но в окне он должен играть
+            # в своём темпе — иначе 6-секундный ролик пролетит за секунду.
+            if cam.is_file and cam.fps > 0:
+                next_file_at += 1.0 / float(cam.fps)
+                delay = next_file_at - time.perf_counter()
+                if delay > 0:
+                    self._stop.wait(delay)
+                else:
+                    next_file_at = time.perf_counter()
+            else:
+                next_file_at = time.perf_counter()
+
     def _analysis_loop(self) -> None:
-        """Детекция лиц и скелет — реже, чем показ кадров."""
+        """Детекция лиц, скелета тела — реже, чем показ кадров."""
         self._set_status("Загружаю модель лиц…")
         try:
             recognizer = self._recognizer_factory(self.cfg)
@@ -242,7 +271,13 @@ class CameraPreview:
             log.exception("Не удалось подготовить распознавание лиц")
             return
 
-        self._set_status("Ищу лица…")
+        pose = None
+        pose_interval = 1.0 / max(1.0, self.pose_fps)
+        last_pose_at = 0.0
+        pose_fps_start = time.perf_counter()
+        pose_fps_frames = 0
+
+        self._set_status("Ищу лица и тело…")
         interval = 1.0 / max(1.0, self.analysis_fps)
         fps_window_start = time.perf_counter()
         fps_window_frames = 0
@@ -252,21 +287,44 @@ class CameraPreview:
             if frame is None:
                 self._stop.wait(0.05)
                 continue
+            work, inv = self._analysis_frame(frame)
             try:
-                overlays = self._recognize_faces(recognizer, frame)
+                overlays = self._recognize_faces(recognizer, work=work, inv=inv)
             except Exception as exc:
                 # модель/кадр могут сломаться — показываем кадр без скелета
                 self._last_error = str(exc) or exc.__class__.__name__
                 log.warning("Анализ лиц: %s", self._last_error)
                 self._stop.wait(0.5)
                 continue
+
+            # Тело ищем реже лиц: модель тяжелее, а поза меняется плавно.
+            # Если «Тело» выключили и включили в окне — создаём модель на месте.
+            pose_overlays = None
+            if self.pose_enabled and pose is None:
+                try:
+                    pose = self._pose_factory(self.cfg)
+                except Exception as exc:
+                    self._pose_error = str(exc) or exc.__class__.__name__
+                    log.warning("Модель позы недоступна: %s", self._pose_error)
+                    pose = None
+            if (pose is not None and self.pose_enabled
+                    and started - last_pose_at >= pose_interval):
+                last_pose_at = started
+                pose_overlays = self._detect_pose(pose, work=work, inv=inv)
+                pose_fps_frames += 1
+
             now = time.time()
             with self._lock:
                 self._faces = overlays
                 self._faces_ts = now
+                if pose_overlays is not None:
+                    self._poses = pose_overlays
+                    self._poses_ts = now
                 if self._last_error:
                     self._status = "Камера работает (лица: ошибка)"
-                elif overlays:
+                elif self._pose_error:
+                    self._status = "Камера работает (тело: ошибка)"
+                elif overlays or self._poses:
                     self._status = "Камера работает"
                 else:
                     self._status = "Камера работает — лиц не видно"
@@ -278,11 +336,19 @@ class CameraPreview:
                 fps_window_start = time.perf_counter()
                 fps_window_frames = 0
 
+            pose_elapsed = time.perf_counter() - pose_fps_start
+            if pose_elapsed >= 1.0:
+                with self._lock:
+                    self._pose_fps = pose_fps_frames / pose_elapsed
+                pose_fps_start = time.perf_counter()
+                pose_fps_frames = 0
+
             # не жжём CPU: спим остаток до следующего анализа
             spent = time.perf_counter() - started
             self._stop.wait(max(0.0, interval - spent))
 
-    def _recognize_faces(self, recognizer, frame: np.ndarray) -> list[FaceOverlay]:
+    def _analysis_frame(self, frame: np.ndarray):
+        """Уменьшенный кадр для нейросетей + коэффициент возврата."""
         height, width = frame.shape[:2]
         scale = min(1.0, float(self.analysis_width) / float(max(1, width)))
         if scale < 0.999:
@@ -298,9 +364,18 @@ class CameraPreview:
                 _, work = ensure_night_quality(work, self.night_threshold)
             except Exception:
                 log.debug("Ночное усиление кадра не удалось", exc_info=True)
+        return work, (1.0 / scale if scale > 0 else 1.0)
 
+    def _recognize_faces(self, recognizer, frame: np.ndarray | None = None,
+                         *, work: np.ndarray | None = None,
+                         inv: float | None = None) -> list[FaceOverlay]:
+        if work is None:
+            if frame is None:
+                return []
+            work, inv = self._analysis_frame(frame)
         matches, _faces = recognizer.recognize(work)
-        inv = 1.0 / scale if scale > 0 else 1.0
+        if inv is None:
+            inv = 1.0
 
         def to_full(value):
             if value is None:
@@ -328,6 +403,30 @@ class CameraPreview:
             ))
         return overlays
 
+    def _detect_pose(self, estimator, frame: np.ndarray | None = None,
+                     *, work: np.ndarray | None = None,
+                     inv: float | None = None) -> list[PoseOverlay]:
+        if work is None:
+            if frame is None:
+                return []
+            work, inv = self._analysis_frame(frame)
+        poses = estimator.detect(work)
+        if inv is None:
+            inv = 1.0
+        error = str(getattr(estimator, "error", "") or "")
+        if error and error != self._pose_error:
+            log.warning("Анализ тела: %s", error)
+        self._pose_error = error
+        return [
+            PoseOverlay(
+                bbox=tuple(int(v * inv) for v in pose.bbox),  # type: ignore[arg-type]
+                keypoints=np.asarray(pose.keypoints, dtype=np.float32) * inv,
+                confidence=np.asarray(pose.confidence, dtype=np.float32),
+                score=pose.score,
+            )
+            for pose in poses
+        ]
+
     # ------------------------------------------------------------------ кадры
     def latest_frame(self) -> Optional[np.ndarray]:
         with self._lock:
@@ -340,6 +439,12 @@ class CameraPreview:
             if time.time() - self._faces_ts > max_age:
                 return []
             return list(self._faces)
+
+    def latest_poses(self, max_age: float = 1.5) -> list[PoseOverlay]:
+        with self._lock:
+            if time.time() - self._poses_ts > max_age:
+                return []
+            return list(self._poses)
 
     @staticmethod
     def _mirror_overlay(item: FaceOverlay, width: int) -> FaceOverlay:
@@ -359,6 +464,19 @@ class CameraPreview:
             landmarks=landmarks,
             kps=kps,
             edges=list(item.edges),
+        )
+
+    @staticmethod
+    def _mirror_pose(item: PoseOverlay, width: int) -> PoseOverlay:
+        keypoints = np.asarray(item.keypoints, dtype=np.float32).copy()
+        if keypoints.size:
+            keypoints[:, 0] = width - 1 - keypoints[:, 0]
+        x1, y1, x2, y2 = item.bbox
+        return PoseOverlay(
+            bbox=(width - 1 - x2, y1, width - 1 - x1, y2),
+            keypoints=keypoints,
+            confidence=np.asarray(item.confidence, dtype=np.float32).copy(),
+            score=item.score,
         )
 
     def _base_for_display(self, mirror: bool) -> Optional[np.ndarray]:
@@ -396,6 +514,13 @@ class CameraPreview:
         frame = base.copy()
         height, width = frame.shape[:2]
 
+        if self.pose_enabled:
+            poses = self.latest_poses()
+            if poses:
+                drawn_poses = [self._mirror_pose(pose, width) if do_mirror
+                               else pose for pose in poses]
+                self._draw_poses(frame, drawn_poses)
+
         faces = self.latest_faces()
         if faces:
             drawn: list[FaceOverlay] = []
@@ -414,6 +539,26 @@ class CameraPreview:
             )
         return frame
 
+    def _draw_poses(self, frame: np.ndarray,
+                    poses: list[PoseOverlay]) -> None:
+        height, width = frame.shape[:2]
+        thickness = 1 if width < 800 else 2
+        for pose in poses:
+            if max(pose.bbox[2] - pose.bbox[0],
+                   pose.bbox[3] - pose.bbox[1]) < 12:
+                continue
+            draw_pose(
+                frame,
+                {
+                    "bbox": pose.bbox,
+                    "keypoints": pose.keypoints,
+                    "confidence": pose.confidence,
+                },
+                POSE_COLOR,
+                thickness=thickness,
+                min_conf=self.pose_conf,
+            )
+
     def _draw_faces(self, frame: np.ndarray,
                     faces: list[FaceOverlay]) -> None:
         height, width = frame.shape[:2]
@@ -431,7 +576,10 @@ class CameraPreview:
             if self.boxes_enabled:
                 draw_face_box(frame, item, thickness=thickness)
             if self.face_mesh_enabled:
-                draw_face_mesh(frame, item, face.color, thickness=thickness)
+                size = min(face.bbox[2] - face.bbox[0],
+                           face.bbox[3] - face.bbox[1])
+                line = 1 if size < 130 else thickness
+                draw_face_mesh(frame, item, face.color, thickness=line)
 
     def snapshot(self, path: str | Path | None = None, quality: int = 95) -> Optional[str]:
         """Сохранить текущий кадр (как в окне) и вернуть путь."""
@@ -466,6 +614,10 @@ class CameraPreview:
                 "analysis_fps": round(self._analysis_fps, 1),
                 "target_fps": self.target_fps,
                 "faces": len(self._faces) if time.time() - self._faces_ts < 1.5 else 0,
+                "poses": len(self._poses) if time.time() - self._poses_ts < 1.5 else 0,
+                "pose_enabled": self.pose_enabled,
+                "pose_fps": round(self._pose_fps, 1),
+                "pose_error": self._pose_error,
                 "frames": self._frame_count,
                 "width": frame_size[0],
                 "height": frame_size[1],
@@ -481,5 +633,11 @@ class CameraPreview:
     def set_mirror(self, enabled: bool) -> None:
         self.mirror = bool(enabled)
 
+    def set_pose_enabled(self, enabled: bool) -> None:
+        self.pose_enabled = bool(enabled)
 
-__all__ = ["CameraPreview", "FaceOverlay", "KNOWN_COLOR", "UNKNOWN_COLOR"]
+
+__all__ = [
+    "CameraPreview", "FaceOverlay", "PoseOverlay",
+    "KNOWN_COLOR", "UNKNOWN_COLOR",
+]

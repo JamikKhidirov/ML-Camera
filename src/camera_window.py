@@ -1,4 +1,4 @@
-"""Окно камеры в Tkinter: живой поток + скелет лица + высокий FPS.
+"""Окно камеры в Tkinter: живой поток + скелет лица и тела + высокий FPS.
 
 Запуск:
     python -m src.camera_window                 # камера из config/config.yaml
@@ -83,6 +83,7 @@ class CameraWindow:
         self.root.configure(bg=BG)
 
         self._show_mesh = tk.BooleanVar(value=self.preview.face_mesh_enabled)
+        self._show_pose = tk.BooleanVar(value=self.preview.pose_enabled)
         self._show_boxes = tk.BooleanVar(value=self.preview.boxes_enabled)
         self._mirror = tk.BooleanVar(value=self.preview.mirror)
         self._display_frames = 0
@@ -122,6 +123,7 @@ class CameraWindow:
         switches = tk.Frame(top, bg=PANEL)
         switches.pack(side="right", padx=8)
         for text, variable, command in (
+                ("Тело", self._show_pose, self._toggle_pose),
                 ("Скелет", self._show_mesh, self._toggle_mesh),
                 ("Рамки", self._show_boxes, self._toggle_boxes),
                 ("Зеркало", self._mirror, self._toggle_mirror)):
@@ -168,7 +170,7 @@ class CameraWindow:
         tk.Label(bottom, textvariable=self.status_var, bg=BG, fg=MUTED,
                  font=("Consolas", 9), anchor="w").pack(side="left")
         self.hint_var = tk.StringVar(
-            value="Пробел — пауза · S — снимок · F11 — полный экран · Esc — выход")
+            value="S снимок · B тело · F11 экран · Esc выход")
         tk.Label(bottom, textvariable=self.hint_var, bg=BG, fg="#5c6b82",
                  font=("Segoe UI", 8), anchor="e").pack(side="right")
 
@@ -178,6 +180,8 @@ class CameraWindow:
         self.root.bind("<space>", lambda _e: self.toggle_pause())
         self.root.bind("<s>", lambda _e: self.take_snapshot())
         self.root.bind("<S>", lambda _e: self.take_snapshot())
+        self.root.bind("<b>", lambda _e: self.toggle_pose())
+        self.root.bind("<B>", lambda _e: self.toggle_pose())
 
     # ------------------------------------------------------------- управление
     def _current_index(self) -> int:
@@ -197,6 +201,7 @@ class CameraWindow:
         self.current = dict(camera_cfg)
         self.preview = CameraPreview(self.cfg, self.current)
         self._show_mesh.set(self.preview.face_mesh_enabled)
+        self._show_pose.set(self.preview.pose_enabled)
         self._show_boxes.set(self.preview.boxes_enabled)
         self._mirror.set(self.preview.mirror)
         self.title_var.set(_short(self.current.get("name", "камера"), 24))
@@ -222,6 +227,14 @@ class CameraWindow:
 
     def _toggle_mesh(self) -> None:
         self.preview.set_mesh_enabled(bool(self._show_mesh.get()))
+
+    def _toggle_pose(self) -> None:
+        self.preview.set_pose_enabled(bool(self._show_pose.get()))
+
+    def toggle_pose(self) -> None:
+        """Горячая клавиша B: тело вкл/выкл (чекбокс остаётся в синхроне)."""
+        self._show_pose.set(not bool(self._show_pose.get()))
+        self._toggle_pose()
 
     def _toggle_boxes(self) -> None:
         self.preview.set_boxes_enabled(bool(self._show_boxes.get()))
@@ -309,6 +322,7 @@ class CameraWindow:
             f"Показ: {self._display_fps:>4.1f} FPS  ·  "
             f"Анализ: {stats['analysis_fps']:>4.1f} FPS  ·  "
             f"Лиц: {stats['faces']}  ·  "
+            f"Людей: {stats['poses']}  ·  "
             f"{stats['width']}×{stats['height']}  ·  {stats['status']}")
 
     # ------------------------------------------------------------------ жизнь
@@ -327,7 +341,7 @@ class CameraWindow:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="MLCamera — камера в окне Tkinter со скелетом лица")
+        description="MLCamera — камера в окне Tkinter со скелетом лица и тела")
     parser.add_argument("--config", default=None,
                         help="путь к config.yaml (по умолчанию config/config.yaml)")
     parser.add_argument("--camera", type=int, default=None,

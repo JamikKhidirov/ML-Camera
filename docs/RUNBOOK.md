@@ -11,7 +11,7 @@
 | Настройки (клик) | `settings.bat` | окно Tkinter: все параметры |
 | Настройки (команда) | `python scripts/settings.py` | то же без ярлыка |
 | С превью | `python main.py --preview` | окно с рамками + панель |
-| Камера + скелет | `python main.py --view` / `camera.bat` | лёгкое окно Tkinter: видео, скелет лица, без панели и БД |
+| Камера + скелет | `python main.py --view` / `camera.bat` | лёгкое окно Tkinter: видео, скелет лица и тела, без панели и БД |
 | Через модуль | `python -m src.main` | идентично `python main.py` |
 | В Docker | `docker compose up -d --build` | контейнер на сервере (см. `docs/DOCKER.md`) |
 
@@ -28,7 +28,7 @@
 | `--cameras 0 2` | запустить только камеры с индексами 0 и 2 |
 | `--once` | прогнать ~30 кадров и выйти (отладка) |
 | `--preview` | включить живое окно с видео и рамками (перекрывает конфиг) |
-| `--view` | окно камеры Tkinter со скелетом лица (без панели и БД) |
+| `--view` | окно камеры Tkinter со скелетом лица и тела (без панели и БД) |
 | `--recording` | включить запись видео (перекрывает конфиг) |
 | `--web` | поднять веб-панель вместе с камерой |
 | `--no-web` | не запускать веб-панель (даже если `web.autostart: true`) |
@@ -40,7 +40,7 @@
 python main.py --self-test        # проверить, что уведомления доходят
 python main.py                    # веб-камера + панель (config.yaml)
 python main.py --preview          # превью + панель
-python main.py --view             # окно камеры: скелет лица
+python main.py --view             # окно камеры: скелет лица и тела
 python main.py --no-web           # только камера
 python main.py --once             # отладка: 30 кадров и выход
 python main.py --cameras 0        # только первая камера
@@ -56,7 +56,7 @@ python scripts/settings.py        # настройки в Tkinter
 | `organize_folders.py` | переименовать папки на настоящие имена + подписи «кто есть кто» |
 | `collect_faces.py` | вырезать лица из фото в `data/datasets/raw/<имя>/` |
 | `register_faces.py` | запомнить лица (эмбеддинги) — после этого камера узнаёт людей |
-| `download_models.py` | скачать/проверить модели (YOLO, InsightFace, марка авто, OCR) |
+| `download_models.py` | скачать/проверить модели (YOLO, YOLO pose, InsightFace, марка авто, OCR) |
 | `download_car_brand_model.py` | скачать готовую модель марки (49 марок) и собрать ONNX |
 | `install_alpr.py` | поставить FastALPR (детектор + OCR номеров) и починить OpenCV GUI |
 | `make_test_video.py` | сгенерить тестовое видео без камеры |
@@ -65,7 +65,7 @@ python scripts/settings.py        # настройки в Tkinter
 | `show_events.py` | вывести последние события из базы |
 | `web_panel.py` | веб-панель истории событий (отдельный процесс, без управления камерами) |
 | `settings.py` | настройки в окне Tkinter — те же поля, что в веб-панели |
-| `camera_view.py` | окно камеры со скелетом лица (то же, что `camera.bat`) |
+| `camera_view.py` | окно камеры со скелетом лица и тела (то же, что `camera.bat`) |
 | `collect_car_images.py` | собрать фото машин из событий в датасет для разметки |
 | `train_brand_classifier.py` | (опция) обучить свою модель марок на своих фото |
 | `make_release_zip.py` | упаковать проект в zip для загрузки на VPS |

@@ -24,8 +24,8 @@
 <p align="center">
   <img alt="Python" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white">
   <img alt="Windows | Linux" src="https://img.shields.io/badge/Windows%20%7C%20Linux-0f172a?style=for-the-badge&logo=linux&logoColor=white">
-  <img alt="5 neural models" src="https://img.shields.io/badge/neural%20models-5-42e8a0?style=for-the-badge">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-83%20passed-42e8a0?style=for-the-badge">
+  <img alt="6 neural models" src="https://img.shields.io/badge/neural%20models-6-42e8a0?style=for-the-badge">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-110%20passed-42e8a0?style=for-the-badge">
   <img alt="Version" src="https://img.shields.io/badge/version-v1.1.0-40d6ff?style=for-the-badge">
   <img alt="Local-first" src="https://img.shields.io/badge/privacy-local--first-966eff?style=for-the-badge">
 </p>
@@ -220,11 +220,12 @@ recording:
 Проверить камеру, не оставляя её работать: `python main.py --once` —
 обработает ~30 кадров и выйдет.
 
-### Окно камеры в Tkinter (скелет лица + высокий FPS)
+### Окно камеры в Tkinter (скелет лица и тела + высокий FPS)
 
-Отдельное лёгкое окно: живое видео, рамка с именем и **скелет лица по
-106 точкам** (овал, брови, глаза, нос, губы). Запускается без браузера,
-БД и уведомлений — удобно проверить камеру и свет.
+Отдельное лёгкое окно: живое видео, рамка с именем, **скелет лица по
+106 точкам** (овал, брови, глаза, нос, губы) и **скелет тела по 17 точкам
+COCO** — плечи, руки, локти, запястья, таз, колени и стопы (YOLOv8-pose).
+Запускается без браузера, БД и уведомлений — удобно проверить камеру и свет.
 
 ```bash
 camera.bat                      # Windows: двойной клик
@@ -235,18 +236,22 @@ python -m src.camera_window --source 0          # веб-камера
 python -m src.camera_window --source rtsp://... # IP-камера
 ```
 
-![Окно камеры MLCamera](docs/assets/camera_window.png)
+![Окно камеры MLCamera: скелет лица и тела](docs/assets/camera_window.png)
+
+<sub>На скриншоте — демонстрационный ролик, а не камера автора.</sub>
 
 | Кнопка / клавиша | Что делает |
 |---|---|
 | `⏸ Пауза` / `Пробел` | остановить показ (камера продолжает работать) |
 | `📷 Снимок` / `S` | сохранить кадр в `data/snapshots/` |
 | `⛶ Экран` / `F11` | полный экран, `Esc` — выход |
-| `⏸`/`Зеркало`/`Рамки`/`Скелет` | включить/выключить элементы |
+| `Тело` / `B` | включить/выключить скелет тела (руки, ноги) |
+| `Зеркало`/`Рамки`/`Скелет` | включить/выключить остальные элементы |
 | `⚙` | открыть настройки (тот же `config/config.yaml`) |
 
-Почему картинка плавная: **захват кадров, анализ лиц и отрисовка окна
-идут в разных потоках**. Нейросеть не блокирует показ видео.
+Почему картинка плавная: **захват кадров, анализ лиц/тела и отрисовка окна
+идут в разных потоках**. Нейросеть не блокирует показ видео. Тело ищется
+реже лица (`pose_fps`), а готовый скелет кэшируется между кадрами.
 
 ```yaml
 preview:
@@ -255,8 +260,14 @@ preview:
   analysis_fps: 12       # как часто искать лица и обновлять скелет
   analysis_width: 640    # ширина кадра для InsightFace
   face_mesh: true        # скелет лица
+  pose: true             # скелет тела (17 точек COCO)
+  pose_fps: 8            # как часто искать тело
+  pose_conf: 0.35        # порог уверенности точек
   boxes: true            # рамки и имена
   mirror: true           # зеркалить, как в селфи
+
+models:
+  pose: data/models/yolov8n-pose.pt
 
 camera:
   width: 1280
@@ -265,8 +276,12 @@ camera:
   backend: "auto"        # Windows: DirectShow → MSMF; можно "dshow"/"msmf"
 ```
 
-> На слабом CPU уменьши `preview.analysis_fps` до 8 и `analysis_width` до
-> 480 — показ останется плавным, скелет будет обновляться чуть реже.
+Модель позы (6.5 МБ) скачивается автоматически при первом запуске или
+командой `python scripts/download_models.py`.
+
+> На слабом CPU уменьши `preview.analysis_fps` до 8, `preview.pose_fps` до 4
+> и `analysis_width` до 480 — показ останется плавным, скелеты будут
+> обновляться чуть реже.
 
 ### Управление камерой из веб-панели
 
@@ -399,6 +414,7 @@ objects:
 | Задача | Модель | Размер | Лицензия |
 |---|---|---|---|
 | Люди, машины, животные, вещи | YOLOv8m (ПК) / YOLOv8n (VPS) | 6–50 МБ | AGPL-3.0 |
+| Скелет тела (17 точек) | YOLOv8n-pose (COCO) | 6.5 МБ | AGPL-3.0 |
 | Лица и эмбеддинги | InsightFace `buffalo_s` / `buffalo_l` | 158 МБ | код MIT, веса — research |
 | Марка автомобиля | ConvNeXt-Tiny, Stanford Cars, 49 марок | 106 МБ | Apache-2.0 |
 | Своя марка (РФ) | MobileNetV3 / ConvNeXt, обучение на ваших фото | 10–110 МБ | ваша |
@@ -542,7 +558,7 @@ python -m pytest -q
 
 | Скрипт | Зачем |
 |---|---|
-| `scripts/download_models.py` | скачать YOLO, лица и готовую модель марки |
+| `scripts/download_models.py` | скачать YOLO, YOLO pose, лица и готовую модель марки |
 | `scripts/download_car_brand_model.py` | только модель марки |
 | `scripts/install_alpr.py` | детектор и OCR номеров (FastALPR) |
 | `scripts/web_panel.py` | веб-панель отдельным процессом (статусы камер — только просмотр) |

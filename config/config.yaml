@@ -107,6 +107,7 @@ car:
   cooldown_minutes: 60
 models:
   yolov8: data/models/yolov8n.pt
+  pose: data/models/yolov8n-pose.pt
   brand_onnx: data/models/car_brand.onnx
   brand_labels: data/models/car_brand_labels.json
 database:
@@ -133,6 +134,9 @@ preview:
   face_mesh: true
   boxes: true
   mirror: true
+  pose: true
+  pose_fps: 8
+  pose_conf: 0.35
 web:
   enabled: true
   autostart: true

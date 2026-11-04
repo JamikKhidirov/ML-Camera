@@ -43,8 +43,8 @@ SECTIONS: list[dict] = [
     {"id": "stream", "title": "Камера и FPS", "icon": "📷",
      "hint": "Разрешение и частота кадров. FPS = 0 — камера отдаёт свой максимум."},
     {"id": "preview", "title": "Окно камеры (Tkinter)", "icon": "📺",
-     "hint": "Живое окно со скелетом лица. Показ и анализ работают в разных "
-             "потоках, поэтому картинка остаётся плавной."},
+     "hint": "Живое окно со скелетом лица и тела. Показ и анализ работают "
+             "в разных потоках, поэтому картинка остаётся плавной."},
     {"id": "analysis", "title": "Анализ кадров", "icon": "🧠",
      "hint": "Как часто запускать ИИ. Больше пропуск — легче процессору, но меньше событий."},
     {"id": "motion", "title": "Движение", "icon": "🎯",
@@ -121,6 +121,22 @@ FIELDS: list[dict] = [
     {"path": "preview.mirror", "section": "preview", "label": "Зеркалить кадр",
      "type": "bool", "default": True,
      "help": "Как в селфи: левая рука — слева. Для IP-камеры можно выключить."},
+    {"path": "preview.pose", "section": "preview",
+     "label": "Скелет тела (17 точек)", "type": "bool", "default": True,
+     "help": "Плечи, руки, ноги и стопы через YOLOv8-pose. Точки COCO: "
+             "голова, плечи, локти, запястья, таз, колени, стопы."},
+    {"path": "preview.pose_fps", "section": "preview",
+     "label": "FPS скелета тела", "type": "int", "min": 1, "max": 30,
+     "default": 8, "unit": "кадр/с",
+     "help": "Тело ищется реже лиц: модель тяжелее, а поза меняется плавно. "
+             "8–10 — хороший баланс."},
+    {"path": "preview.pose_conf", "section": "preview",
+     "label": "Порог точек тела", "type": "float", "min": 0.1, "max": 0.95,
+     "step": 0.01, "default": 0.35,
+     "help": "Ниже порога точка считается невидимой и не рисуется."},
+    {"path": "models.pose", "section": "preview", "label": "Модель позы",
+     "type": "text", "default": "data/models/yolov8n-pose.pt",
+     "help": "Путь к весам YOLO pose. Скачать: python scripts/download_models.py"},
 
     # ---- анализ ----
     {"path": "analysis.detect_every_n_frames", "section": "analysis",

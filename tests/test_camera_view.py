@@ -6,6 +6,7 @@ import numpy as np
 from src.camera_view import CameraPreview, FaceOverlay
 from src.config import Config
 from src.face_recognizer import FaceMatch
+from src.pose import PoseOverlay
 
 
 class FakeCamera:
@@ -45,12 +46,44 @@ class FakeRecognizer:
         return [match], []
 
 
+class FakeFileCamera(FakeCamera):
+    """Видеофайл: читается быстро, но окно должно играть в своём темпе."""
+
+    is_file = True
+    fps = 40.0
+
+
+class FakePose:
+    """17 точек без загрузки YOLO — тесты не тянут веса."""
+
+    error = ""
+
+    def __init__(self, cfg=None):
+        self.cfg = cfg
+
+    def detect(self, frame):
+        keypoints = np.zeros((17, 2), dtype=np.float32)
+        keypoints[:, 0] = 30
+        keypoints[:, 1] = np.linspace(40, 220, 17)
+        return [PoseOverlay(bbox=(20, 40, 60, 220),
+                            keypoints=keypoints,
+                            confidence=np.ones(17, dtype=np.float32),
+                            score=0.9)]
+
+
+def _cfg_pose(tmp_path):
+    cfg = _cfg(tmp_path)
+    cfg._data["preview"].update({"pose": True, "pose_fps": 20,
+                                 "pose_conf": 0.35})
+    return cfg
+
+
 def _cfg(tmp_path):
     return Config({
         "camera": {"width": 320, "height": 240, "fps": 30},
         "preview": {"fps": 30, "width": 320, "analysis_fps": 20,
                     "analysis_width": 320, "face_mesh": True,
-                    "boxes": True, "mirror": True},
+                    "boxes": True, "mirror": True, "pose": False},
         "people": {"unknown_label": "Незнакомец"},
         "database": {"path": str(tmp_path / "db.sqlite")},
         "storage": {"events_dir": str(tmp_path / "events")},
@@ -116,6 +149,55 @@ def test_switches_change_flags(tmp_path, monkeypatch):
     preview.set_mesh_enabled(False)
     preview.set_boxes_enabled(False)
     preview.set_mirror(False)
+    preview.set_pose_enabled(False)
     assert preview.face_mesh_enabled is False
     assert preview.boxes_enabled is False
     assert preview.mirror is False
+    assert preview.pose_enabled is False
+
+
+def test_mirror_pose_moves_keypoints_and_bbox():
+    pose = PoseOverlay(
+        bbox=(10, 20, 30, 40),
+        keypoints=np.array([[10.0, 5.0], [30.0, 5.0]], dtype=np.float32),
+        confidence=np.ones(2, dtype=np.float32),
+    )
+    mirrored = CameraPreview._mirror_pose(pose, width=100)
+    assert mirrored.bbox == (69, 20, 89, 40)
+    assert mirrored.keypoints[0, 0] == 89.0
+    assert mirrored.keypoints[1, 0] == 69.0
+
+
+def test_preview_detects_body(tmp_path, monkeypatch):
+    monkeypatch.setattr("src.camera_view.Camera", FakeCamera)
+    preview = CameraPreview(_cfg_pose(tmp_path), {"name": "Тело", "source": 0},
+                            recognizer_factory=FakeRecognizer,
+                            pose_factory=FakePose)
+    preview.start()
+    try:
+        deadline = time.time() + 5.0
+        while time.time() < deadline and not preview.latest_poses():
+            time.sleep(0.05)
+        stats = preview.stats()
+        assert stats["pose_enabled"] is True
+        assert stats["poses"] == 1
+        poses = preview.latest_poses()
+        assert poses[0].keypoints.shape == (17, 2)
+        frame = preview.frame_for_display()
+        assert frame is not None and frame.any()
+    finally:
+        preview.stop()
+
+
+def test_video_file_plays_in_real_time(tmp_path, monkeypatch):
+    monkeypatch.setattr("src.camera_view.Camera", FakeFileCamera)
+    preview = CameraPreview(_cfg(tmp_path), {"name": "Видео", "source": "x.mp4"},
+                            recognizer_factory=FakeRecognizer)
+    preview.start()
+    try:
+        time.sleep(0.5)
+        frames = preview.stats()["frames"]
+    finally:
+        preview.stop()
+    # 40 FPS за 0,5 с — около 20 кадров; без ограничения было бы тысячи.
+    assert 1 <= frames <= 100

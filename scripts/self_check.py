@@ -251,6 +251,20 @@ def main() -> int:
     except Exception as exc:
         bad(f"YOLO: {exc}")
 
+    # ---------- 9b. YOLO pose (скелет тела) ----------
+    section("9b. YOLO pose — скелет тела (17 точек)")
+    try:
+        from src.pose import PoseEstimator
+        pe = PoseEstimator(cfg)
+        t0 = time.time()
+        poses = pe.detect(np.zeros((360, 640, 3), np.uint8))
+        (ok if not pe.error else bad)(
+            f"YOLO pose готова за {time.time()-t0:.1f} c "
+            f"({pe.path.name}, людей: {len(poses)})"
+            if not pe.error else f"YOLO pose: {pe.error}")
+    except Exception as exc:
+        bad(f"YOLO pose: {exc}")
+
     # ---------- 10. распознавание лиц ----------
     section("10. Распознавание лиц («кто пришёл»)")
     try:
