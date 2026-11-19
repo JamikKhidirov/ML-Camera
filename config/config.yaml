@@ -1,5 +1,5 @@
 # =====================================================================
-#  MLCamera — единственный конфиг. Сохранён из панели/настроек 04.11.2026 00:23.
+#  MLCamera — единственный конфиг. Сохранён из панели/настроек 04.11.2026 23:34.
 #  Все параметры можно менять во вкладке «Настройки» веб-панели
 #  или в приложении scripts/settings.py (Tkinter).
 # =====================================================================
@@ -19,7 +19,7 @@ cameras:
 camera:
   width: 1280
   height: 720
-  fps: 60
+  fps: 0
   backend: auto
   fallback_webcam: true
   night_enabled: true
@@ -121,21 +121,21 @@ recording:
   seconds_before: 3
   seconds_after: 3
   rotate_seconds: 300
-  fps: 12
+  fps: 60
   fourcc: mp4v
 ui:
-  preview_enabled: false
+  preview_enabled: true
   window_title: MLCamera — {cam}
 preview:
-  fps: 30
+  fps: 60
   width: 960
-  analysis_fps: 12
+  analysis_fps: 30
   analysis_width: 640
   face_mesh: true
   boxes: true
   mirror: true
   pose: true
-  pose_fps: 8
+  pose_fps: 30
   pose_conf: 0.35
 web:
   enabled: true
@@ -148,7 +148,7 @@ web:
   control: true
   overlay: true
   face_mesh: true
-  stream_fps: 20
+  stream_fps: 60
   stream_quality: 70
 notify:
   min_interval_seconds: 30
